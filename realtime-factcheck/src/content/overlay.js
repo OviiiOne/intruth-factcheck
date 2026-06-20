@@ -2,6 +2,15 @@
 
 console.log('[overlay] content script loaded');
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 let panel = null;
 let transcriptFeedEl = null;
 let interimEl = null;
@@ -73,6 +82,17 @@ function parseSpeakersFromTitle(title) {
 
 let lastActiveSpeaker = null; // track most recently labeled speaker
 
+function normalizeSpeakerName(name) {
+  if (!name) return name;
+  // if name matches a known speaker's last name or full name, return the canonical last name
+  for (const speaker of speakers) {
+    const lastName = speaker.trim().split(' ').pop().toLowerCase();
+    if (name.toLowerCase() === speaker.toLowerCase()) return speaker; // exact match
+    if (name.toLowerCase().includes(lastName)) return speaker;        // last name match
+  }
+  return name; // unknown speaker — return as-is
+}
+
 function getClaimSpeaker(claimText) {
   if (!speakers.length) return 'Other';
   const lower = claimText.toLowerCase();
@@ -113,10 +133,10 @@ function showSpeakerBanner(speakerId, sample) {
   banner.className = 'rtfc-speaker-banner';
   banner.innerHTML =
     '<div class="rtfc-speaker-banner-text">New speaker detected — who is this?</div>' +
-    '<div class="rtfc-speaker-banner-sample">"' + sample + '..."</div>' +
+    '<div class="rtfc-speaker-banner-sample">"' + escapeHtml(sample) + '..."</div>' +
     '<div class="rtfc-speaker-banner-buttons">' +
       speakers.map(name =>
-        '<button class="rtfc-speaker-banner-btn" data-name="' + name + '" data-id="' + speakerId + '">' + name + '</button>'
+        '<button class="rtfc-speaker-banner-btn" data-name="' + escapeHtml(name) + '" data-id="' + speakerId + '">' + escapeHtml(name) + '</button>'
       ).join('') +
       '<button class="rtfc-speaker-banner-btn rtfc-speaker-banner-btn--skip" data-id="' + speakerId + '">Skip</button>' +
     '</div>';
@@ -197,7 +217,7 @@ function renderSpeakerEditor() {
   el.innerHTML = speakers.map((name, i) => {
     const color = getSpeakerColor(name);
     return '<span class="rtfc-speaker-chip" style="border-color:' + color + ';color:' + color + '" data-idx="' + i + '">' +
-      '<input class="rtfc-speaker-chip-input" value="' + name + '" data-idx="' + i + '" style="color:' + color + '" />' +
+      '<input class="rtfc-speaker-chip-input" value="' + escapeHtml(name) + '" data-idx="' + i + '" style="color:' + color + '" />' +
     '</span>';
   }).join('');
 
@@ -247,7 +267,7 @@ function showError(message) {
   toast.className = 'rtfc-error-toast';
   toast.innerHTML =
     '<span class="rtfc-error-icon">⚠</span>' +
-    '<span class="rtfc-error-msg">' + message + '</span>' +
+    '<span class="rtfc-error-msg">' + escapeHtml(message) + '</span>' +
     '<button class="rtfc-error-close">✕</button>';
 
   toast.querySelector('.rtfc-error-close').addEventListener('click', () => toast.remove());
@@ -442,8 +462,8 @@ function buildCard(result) {
   const sourcesHTML = (result.sources ?? []).map((url, i) => {
     const isUrl = url.startsWith('http://') || url.startsWith('https://');
     return isUrl
-      ? '<a href="' + url + '" target="_blank" rel="noopener">Source ' + (i + 1) + '</a>'
-      : '<span class="rtfc-source-text">' + url + '</span>';
+      ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Source ' + (i + 1) + '</a>'
+      : '<span class="rtfc-source-text">' + escapeHtml(url) + '</span>';
   }).join('');
 
   const lexicalRows = buildLexicalRows(result.lexical);
@@ -462,24 +482,24 @@ function buildCard(result) {
     const speakerName  = (normalizedName && !normalizedName.match(/^Speaker\s*\d+$/i)) ? normalizedName : null;
     const speakerColor = speakerName ? getSpeakerColor(speakerName) : null;
     if (speakerColor) {
-      speakerTag = '<div class="rtfc-speaker-tag" style="background:' + speakerColor + '">' + speakerName + '</div>';
+      speakerTag = '<div class="rtfc-speaker-tag" style="background:' + speakerColor + '">' + escapeHtml(speakerName) + '</div>';
     }
   }
 
   card.innerHTML = [
     speakerTag,
     '<div class="rtfc-verdict-header">',
-      '<span class="rtfc-badge rtfc-badge--' + color + '">' + result.verdict + '</span>',
+      '<span class="rtfc-badge rtfc-badge--' + color + '">' + escapeHtml(result.verdict) + '</span>',
       result.pending ? '<span class="rtfc-verifying">⟳ verifying...</span>' : '',
-      '<span class="rtfc-confidence-right">' + result.confidence + ' certainty</span>',
-      '<span class="rtfc-timestamp">' + (result._timestamp || '') + '</span>',
+      '<span class="rtfc-confidence-right">' + escapeHtml(result.confidence) + ' certainty</span>',
+      '<span class="rtfc-timestamp">' + escapeHtml(result._timestamp || '') + '</span>',
     '</div>',
-    '<p class="rtfc-claim">"' + result.claim + '"</p>',
-    '<p class="rtfc-explanation">' + result.explanation + '</p>',
+    '<p class="rtfc-claim">"' + escapeHtml(result.claim) + '"</p>',
+    '<p class="rtfc-explanation">' + escapeHtml(result.explanation) + '</p>',
     '<div class="rtfc-speaker-confidence">',
       '<button class="rtfc-speaker-toggle">',
         '<span class="rtfc-speaker-dot rtfc-speaker-dot--' + convictionColor + '"></span>',
-        'Speaker conviction: ' + (result.speaker_confidence || 'N/A'),
+        'Speaker conviction: ' + escapeHtml(result.speaker_confidence || 'N/A'),
         '<span class="rtfc-speaker-arrow">▾</span>',
       '</button>',
       '<div class="rtfc-speaker-explanation" style="display:none">',

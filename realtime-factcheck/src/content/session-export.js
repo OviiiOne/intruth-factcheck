@@ -1,6 +1,7 @@
 // session-export.js
 // Handles session logging and PDF export.
 // Loaded after overlay.js — exposes logVerdict(), startSession(), stopSession(), exportPDF() as globals.
+// Reuses escapeHtml() defined in overlay.js (loaded first in manifest.json).
 
 const sessionLog = [];
 let sessionStartTime = null;
@@ -65,7 +66,7 @@ function exportPDF() {
   const claimsHTML = speakerOrder.map((spk, spkIdx) => {
     const color = spk !== 'Other' ? speakerColors[spkIdx % speakerColors.length] : '#888';
     const headerHTML = '<div class="speaker-section-header" style="border-left:3px solid ' + color + '">' +
-      '<span class="speaker-section-name" style="color:' + color + '">' + spk + '</span>' +
+      '<span class="speaker-section-name" style="color:' + color + '">' + escapeHtml(spk) + '</span>' +
       '<span class="speaker-section-count">' + speakerGroups[spk].length + ' claim' + (speakerGroups[spk].length !== 1 ? 's' : '') + '</span>' +
     '</div>';
 
@@ -78,21 +79,21 @@ function exportPDF() {
       const sourcesHTML = entry.sources.length
         ? '<div class="sources"><span class="sources-label">Sources:</span>' +
           entry.sources.map((url, j) =>
-            '<a href="' + url + '" class="source-link">Source ' + (j + 1) + '</a>'
+            '<a href="' + escapeHtml(url) + '" class="source-link">Source ' + (j + 1) + '</a>'
           ).join('') + '</div>'
         : '';
 
       return '<div class="claim-card">' +
         '<div class="claim-header">' +
           '<span class="claim-number">#' + (i + 1) + '</span>' +
-          '<span class="verdict" style="color:' + vcolor + '">' + entry.verdict + '</span>' +
-          '<span class="confidence">' + entry.confidence + ' certainty</span>' +
-          '<span class="timestamp">' + timestamp + '</span>' +
+          '<span class="verdict" style="color:' + vcolor + '">' + escapeHtml(entry.verdict) + '</span>' +
+          '<span class="confidence">' + escapeHtml(entry.confidence) + ' certainty</span>' +
+          '<span class="timestamp">' + escapeHtml(timestamp) + '</span>' +
         '</div>' +
-        '<div class="claim-text">"' + entry.claim + '"</div>' +
-        '<div class="explanation">' + entry.explanation + '</div>' +
+        '<div class="claim-text">"' + escapeHtml(entry.claim) + '"</div>' +
+        '<div class="explanation">' + escapeHtml(entry.explanation) + '</div>' +
         '<div class="speaker-row"><span class="speaker-label">Speaker conviction:</span> ' +
-          (entry.speakerConfidence || 'N/A') +
+          escapeHtml(entry.speakerConfidence || 'N/A') +
         '</div>' +
         sourcesHTML +
       '</div>';
@@ -142,8 +143,8 @@ function exportPDF() {
     '<div class="report-header">' +
       '<div class="report-title">Fact Check Report</div>' +
       '<div class="report-meta">' +
-        '<span>📺 ' + pageTitle + '</span>' +
-        '<span>🕐 ' + exportDate + '</span>' +
+        '<span>📺 ' + escapeHtml(pageTitle) + '</span>' +
+        '<span>🕐 ' + escapeHtml(exportDate) + '</span>' +
         '<span>📋 ' + sessionLog.length + ' claim' + (sessionLog.length !== 1 ? 's' : '') + ' detected</span>' +
       '</div>' +
     '</div>' +
