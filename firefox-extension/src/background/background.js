@@ -48,6 +48,15 @@ Return ONLY a JSON array of these objects. No markdown, no text outside the arra
 
 const TRANSLATE_PROMPT = `Translate the user's text into Spanish. If the text is already in Spanish or in English, return it EXACTLY as-is, unchanged. Output ONLY the resulting text — no quotes, no notes, no explanation.`;
 
+const VERIFY_PROMPT = `You are a fact-checker. Evaluate the SINGLE claim the user provides, using the web results if given and your own knowledge. Take the event date/context into account.
+
+Return ONLY a JSON object (no array, no markdown) with:
+- "verdict": one of TRUE, SUBSTANTIALLY TRUE, FALSE, MISLEADING, UNVERIFIABLE
+- "confidence": one of HIGH, MEDIUM, LOW
+- "explanation": 1-2 sentences IN SPANISH explaining the verdict and what the evidence says
+
+No text outside the JSON object.`;
+
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
 function parseSpeakersFromTitle(title) {
@@ -158,6 +167,14 @@ function parseArray(str) {
   if (start === -1 || end === -1) return [];
   try { return JSON.parse(str.slice(start, end + 1)); }
   catch { return []; }
+}
+
+function parseObject(str) {
+  const start = str.indexOf('{');
+  const end = str.lastIndexOf('}');
+  if (start === -1 || end === -1) return null;
+  try { return JSON.parse(str.slice(start, end + 1)); }
+  catch { return null; }
 }
 
 // ── Lexical features ──────────────────────────────────────────────────────────
@@ -506,6 +523,37 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
   }
 }
 
+// ── On-demand verification of a single key point ───────────────────────────────
+
+async function verifyKeyPoint(id, claim, quote) {
+  try {
+    const query = (quote && quote.trim()) ? quote : claim;
+    let urls = [];
+    try { urls = await searchWeb(query); } catch {}
+
+    const dateCtx = pageDate ? `\nDate: ${pageDate}` : '';
+    const titleCtx = pageTitle ? `Event: "${pageTitle}"${dateCtx}\n\n` : '';
+    const quoteCtx = (quote && quote.trim()) ? `\nOriginal quote: "${quote}"` : '';
+    const webBlock = urls.length ? `\n\nWeb results:\n${urls.join('\n')}` : '';
+
+    const raw = await callClaude(
+      `${titleCtx}Evaluate ONLY this claim:\n${claim}${quoteCtx}${webBlock}`,
+      VERIFY_PROMPT
+    );
+    const result = parseObject(raw);
+    if (activeTabId) {
+      sendToTab(activeTabId, {
+        type: 'KEYPOINT_VERDICT',
+        id,
+        result: result ? { ...result, sources: urls } : null,
+      });
+    }
+  } catch (err) {
+    console.error('[verify] error:', err);
+    if (activeTabId) sendToTab(activeTabId, { type: 'KEYPOINT_VERDICT', id, result: null });
+  }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let activeTabId = null;
@@ -608,6 +656,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 
     case 'PIPELINE_ERROR':
       if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg.message });
+      return Promise.resolve();
+
+    case 'VERIFY_KEYPOINT':
+      verifyKeyPoint(msg.id, msg.claim, msg.quote);
       return Promise.resolve();
 
     case 'GET_STATUS':

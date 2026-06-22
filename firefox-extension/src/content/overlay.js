@@ -348,6 +348,8 @@ function removePanel() {
   transcriptCollapsed = false;
   pendingCards.clear();
   pendingCardTimes.clear();
+  kpCards.clear();
+  kpCounter = 0;
   speakers = [];
   speakerColorMap.clear();
   sentenceTimestamps.length = 0;
@@ -624,6 +626,18 @@ const CATEGORY_META = {
   OTRO:        { label: 'Otro',        color: '#6b7280' },
 };
 
+const VERDICT_LABELS = {
+  'TRUE': 'Verdadero',
+  'SUBSTANTIALLY TRUE': 'Mayormente cierto',
+  'FALSE': 'Falso',
+  'MISLEADING': 'Engañoso',
+  'UNVERIFIABLE': 'No verificable',
+};
+const CONF_LABELS = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
+
+let kpCounter = 0;
+const kpCards = new Map(); // id → card element
+
 // Custom categories the AI may invent get a neutral colour + a Title-cased label.
 function prettyCategory(cat) {
   if (!cat) return 'Otro';
@@ -635,6 +649,8 @@ function buildKeyPointCard(kp) {
   const card = document.createElement('div');
   card.className = 'rtfc-keypoint';
   card._kpData = kp;
+  card.dataset.kpid = String(kp._id);
+  kpCards.set(kp._id, card);
 
   const rawSpeaker = (kp.speaker && !String(kp.speaker).match(/^Speaker\s*\d+$/i)) ? kp.speaker : null;
   const speakerName = rawSpeaker ? normalizeSpeakerName(rawSpeaker) : null;
@@ -654,7 +670,20 @@ function buildKeyPointCard(kp) {
     '</div>',
     '<p class="rtfc-kp-point">' + escapeHtml(kp.point) + '</p>',
     quoteHTML,
+    '<div class="rtfc-kp-actions"><button class="rtfc-verify-btn">✓ Verificar</button></div>',
   ].join('');
+
+  const btn = card.querySelector('.rtfc-verify-btn');
+  if (btn) btn.addEventListener('click', () => {
+    btn.disabled = true;
+    btn.textContent = '⟳ Verificando…';
+    browser.runtime.sendMessage({
+      type: 'VERIFY_KEYPOINT',
+      id: kp._id,
+      claim: kp.point,
+      quote: kp.quote || '',
+    });
+  });
 
   return card;
 }
@@ -663,9 +692,44 @@ function addKeyPoint(kp) {
   if (!verdictListEl) return;
   verdictListEl.querySelector('.rtfc-empty')?.remove();
   if (!kp._timestamp) kp._timestamp = getClaimTimestamp(kp.quote || kp.point);
+  kp._id = ++kpCounter;
   const card = buildKeyPointCard(kp);
   verdictListEl.prepend(card);
   if (typeof logKeyPoint === 'function') logKeyPoint(kp);
+}
+
+function applyKeyPointVerdict(id, result) {
+  const card = kpCards.get(id);
+  if (!card) return;
+  const actions = card.querySelector('.rtfc-kp-actions');
+
+  if (!result || !result.verdict) {
+    if (actions) actions.innerHTML = '<span class="rtfc-kp-noverdict">No se pudo verificar.</span>';
+    return;
+  }
+
+  const color = colorForVerdict(result.verdict, result.confidence);
+  const label = VERDICT_LABELS[result.verdict] || result.verdict;
+  const conf = CONF_LABELS[result.confidence] || '';
+  const sourcesHTML = (result.sources ?? []).map((url, i) =>
+    (url.startsWith('http://') || url.startsWith('https://'))
+      ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Fuente ' + (i + 1) + '</a>'
+      : ''
+  ).join('');
+
+  const v = document.createElement('div');
+  v.className = 'rtfc-kp-verdict rtfc-verdict--' + color;
+  v.innerHTML = [
+    '<div class="rtfc-kp-verdict-head">',
+      '<span class="rtfc-badge rtfc-badge--' + color + '">' + escapeHtml(label) + '</span>',
+      conf ? '<span class="rtfc-confidence-right">' + escapeHtml(conf) + ' confianza</span>' : '',
+    '</div>',
+    '<p class="rtfc-explanation">' + escapeHtml(result.explanation || '') + '</p>',
+    (sourcesHTML.trim() ? '<div class="rtfc-sources">' + sourcesHTML + '</div>' : ''),
+  ].join('');
+
+  if (actions) actions.replaceWith(v); else card.appendChild(v);
+  if (typeof updateKeyPointVerdict === 'function') updateKeyPointVerdict(id, result);
 }
 
 function makeDraggable(panel) {
@@ -752,6 +816,10 @@ browser.runtime.onMessage.addListener((msg) => {
       if (msg.results) {
         for (const kp of msg.results) addKeyPoint(kp);
       }
+      break;
+
+    case 'KEYPOINT_VERDICT':
+      applyKeyPointVerdict(msg.id, msg.result);
       break;
 
     case 'NEW_VERDICT':

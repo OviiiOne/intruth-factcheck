@@ -29,15 +29,28 @@ function logTranscript(timecode, text, translation) {
   transcriptLog.push({ timecode, text, translation: translation || '' });
 }
 
-// Neutral key points extracted live (no verdict).
+// Neutral key points extracted live (verdict added later if the user verifies one).
 function logKeyPoint(kp) {
   keyPointsLog.push({
+    id: kp._id,
     timecode: kp._timestamp || '',
     category: kp.category || 'OTRO',
     point: kp.point,
     quote: kp.quote || '',
     speaker: kp.speaker || null,
+    verdict: '',
+    verdictExplanation: '',
+    sources: [],
   });
+}
+
+function updateKeyPointVerdict(id, result) {
+  const entry = keyPointsLog.find(k => k.id === id);
+  if (!entry || !result) return;
+  entry.verdict = result.verdict || '';
+  entry.confidence = result.confidence || '';
+  entry.verdictExplanation = result.explanation || '';
+  entry.sources = result.sources || [];
 }
 
 function startSession() {
@@ -128,6 +141,10 @@ function exportPDF() {
     ANUNCIO: 'Anuncio', CIFRA: 'Cifra', COMPROMISO: 'Compromiso',
     DECLARACION: 'Declaración', CITA: 'Cita', POLITICA: 'Política', OTRO: 'Otro',
   };
+  const VERDICT_LABELS = {
+    'TRUE': 'Verdadero', 'SUBSTANTIALLY TRUE': 'Mayormente cierto',
+    'FALSE': 'Falso', 'MISLEADING': 'Engañoso', 'UNVERIFIABLE': 'No verificable',
+  };
   const keyPointsHTML = keyPointsLog.length
     ? '<div class="claims-title">Puntos clave (' + keyPointsLog.length + ')</div>' +
       keyPointsLog.map(kp => {
@@ -135,6 +152,17 @@ function exportPDF() {
         const label = CAT_LABELS[cat] || (cat.charAt(0) + cat.slice(1).toLowerCase());
         const spk = kp.speaker ? '<span class="kp-speaker">' + escapeHtml(kp.speaker) + '</span>' : '';
         const quote = kp.quote ? '<div class="kp-quote">“' + escapeHtml(kp.quote) + '”</div>' : '';
+        let verdict = '';
+        if (kp.verdict) {
+          const vc = verdictColor(kp.verdict, kp.confidence);
+          const vsources = (kp.sources && kp.sources.length)
+            ? ' ' + kp.sources.map((u, i) => '<a href="' + escapeHtml(u) + '" class="source-link">Fuente ' + (i + 1) + '</a>').join(' ')
+            : '';
+          verdict = '<div class="kp-verdict">' +
+            '<span class="kp-verdict-badge" style="color:' + vc + '">' + escapeHtml(VERDICT_LABELS[kp.verdict] || kp.verdict) + '</span> ' +
+            escapeHtml(kp.verdictExplanation || '') + vsources +
+          '</div>';
+        }
         return '<div class="kp-card">' +
           '<div class="kp-header">' +
             '<span class="kp-cat">' + escapeHtml(label) + '</span>' +
@@ -143,6 +171,7 @@ function exportPDF() {
           '</div>' +
           '<div class="kp-point">' + escapeHtml(kp.point) + '</div>' +
           quote +
+          verdict +
         '</div>';
       }).join('')
     : '';
@@ -204,6 +233,8 @@ function exportPDF() {
     '.kp-speaker { font-size: 11px; font-weight: 600; color: #444; }' +
     '.kp-point { font-size: 13px; color: #222; margin-bottom: 4px; }' +
     '.kp-quote { font-size: 12px; font-style: italic; color: #666; }' +
+    '.kp-verdict { font-size: 12px; color: #444; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e5e5; }' +
+    '.kp-verdict-badge { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }' +
     '.transcript { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-top: 8px; }' +
     '.transcript-line { font-size: 12px; color: #333; line-height: 1.6; margin-bottom: 2px; }' +
     '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
