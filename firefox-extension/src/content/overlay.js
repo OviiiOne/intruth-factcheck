@@ -302,19 +302,13 @@ function createPanel() {
         '<div id="rtfc-transcript-feed"></div>',
         '<p id="rtfc-interim"></p>',
       '</div>',
-      '<div id="rtfc-claims-section">',
-        '<div class="rtfc-section-header">',
-          '<span class="rtfc-section-label">Claims</span>',
-        '</div>',
-        '<ul id="rtfc-claim-feed"></ul>',
-      '</div>',
       '<div id="rtfc-verdicts-section">',
         '<div class="rtfc-section-header">',
-          '<span class="rtfc-section-label">Verdicts</span>',
+          '<span class="rtfc-section-label">Puntos clave</span>',
           '<div id="rtfc-speaker-editor"></div>',
         '</div>',
         '<div id="rtfc-verdicts">',
-          '<p class="rtfc-empty">Verdicts will appear here...</p>',
+          '<p class="rtfc-empty">Los puntos clave aparecerán aquí…</p>',
         '</div>',
       '</div>',
     '</div>',
@@ -612,6 +606,62 @@ function updateVerdict(result) {
   logVerdict(result);
 }
 
+// ── Key points (neutral) ──────────────────────────────────────────────────────
+
+const CATEGORY_META = {
+  ANUNCIO:     { label: 'Anuncio',     color: '#3b82f6' },
+  CIFRA:       { label: 'Cifra',       color: '#8b5cf6' },
+  COMPROMISO:  { label: 'Compromiso',  color: '#10b981' },
+  DECLARACION: { label: 'Declaración', color: '#f59e0b' },
+  CITA:        { label: 'Cita',        color: '#06b6d4' },
+  POLITICA:    { label: 'Política',    color: '#ef4444' },
+  OTRO:        { label: 'Otro',        color: '#6b7280' },
+};
+
+// Custom categories the AI may invent get a neutral colour + a Title-cased label.
+function prettyCategory(cat) {
+  if (!cat) return 'Otro';
+  return cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+}
+
+function buildKeyPointCard(kp) {
+  const meta = CATEGORY_META[kp.category] || { label: prettyCategory(kp.category), color: '#64748b' };
+  const card = document.createElement('div');
+  card.className = 'rtfc-keypoint';
+  card._kpData = kp;
+
+  const rawSpeaker = (kp.speaker && !String(kp.speaker).match(/^Speaker\s*\d+$/i)) ? kp.speaker : null;
+  const speakerName = rawSpeaker ? normalizeSpeakerName(rawSpeaker) : null;
+  const speakerTag = speakerName
+    ? '<div class="rtfc-speaker-tag" style="background:' + getSpeakerColor(speakerName) + '">' + escapeHtml(speakerName) + '</div>'
+    : '';
+
+  const quoteHTML = kp.quote
+    ? '<p class="rtfc-kp-quote">“' + escapeHtml(kp.quote) + '”</p>'
+    : '';
+
+  card.innerHTML = [
+    speakerTag,
+    '<div class="rtfc-kp-header">',
+      '<span class="rtfc-kp-cat" style="background:' + meta.color + '">' + escapeHtml(meta.label) + '</span>',
+      '<span class="rtfc-timestamp">' + escapeHtml(kp._timestamp || '') + '</span>',
+    '</div>',
+    '<p class="rtfc-kp-point">' + escapeHtml(kp.point) + '</p>',
+    quoteHTML,
+  ].join('');
+
+  return card;
+}
+
+function addKeyPoint(kp) {
+  if (!verdictListEl) return;
+  verdictListEl.querySelector('.rtfc-empty')?.remove();
+  if (!kp._timestamp) kp._timestamp = getClaimTimestamp(kp.quote || kp.point);
+  const card = buildKeyPointCard(kp);
+  verdictListEl.prepend(card);
+  if (typeof logKeyPoint === 'function') logKeyPoint(kp);
+}
+
 function makeDraggable(panel) {
   const header = panel.querySelector('#rtfc-header');
   let isDragging = false, startX, startY, startLeft, startTop;
@@ -689,6 +739,12 @@ browser.runtime.onMessage.addListener((msg) => {
 
     case 'PIPELINE_ERROR':
       showError(msg.message || 'An error occurred in the fact-checking pipeline.');
+      break;
+
+    case 'NEW_KEYPOINTS':
+      if (msg.results) {
+        for (const kp of msg.results) addKeyPoint(kp);
+      }
       break;
 
     case 'NEW_VERDICT':

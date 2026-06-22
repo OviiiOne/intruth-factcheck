@@ -233,7 +233,7 @@
 
 .rtfc-empty {
   font-size: 11px;
-  color: #444;
+  color: #888;
   text-align: center;
   padding: 12px 0;
   font-weight: 500;
@@ -305,9 +305,56 @@
 
 .rtfc-timestamp {
   font-size: 10px;
-  color: #444;
+  color: #9a9a9a;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Key points ── */
+
+.rtfc-keypoint {
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid rgba(255,255,255,0.07);
+  animation: rtfc-in 0.18s ease;
+  overflow: hidden;
+}
+
+.rtfc-kp-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rtfc-kp-cat {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.rtfc-kp-header .rtfc-timestamp { margin-left: auto; }
+
+.rtfc-kp-point {
+  font-size: 12px;
+  color: #e8e8e8;
+  line-height: 1.45;
+}
+
+.rtfc-kp-quote {
+  font-size: 11px;
+  color: #9a9a9a;
+  font-style: italic;
+  line-height: 1.45;
+  border-left: 2px solid rgba(255,255,255,0.12);
+  padding-left: 7px;
 }
 
 .rtfc-claim {

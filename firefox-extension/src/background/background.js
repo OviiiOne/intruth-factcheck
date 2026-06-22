@@ -30,6 +30,20 @@ Only include check-worthy factual claims (statistics, historical events, policy 
 
 Return ONLY a JSON array. No markdown, no explanation outside the array.`;
 
+const KEYPOINTS_PROMPT = `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
+
+Capture the SUBSTANCE of any significant statement EVEN IF it sounds like a repeated talking point or campaign rhetoric. For example "Iran will not have a nuclear weapon" is a key point. Only skip pure greetings, filler, and contentless pleasantries.
+
+Do NOT judge whether anything is true — just capture what was said, neutrally.
+
+For each key point, return a JSON object with:
+- "point": a concise, neutral one-sentence summary, written in SPANISH
+- "category": a short UPPERCASE label. Prefer one of: ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA. If none fits well, invent a concise label in Spanish (one or two words, e.g. GEOPOLITICA, SEGURIDAD, ECONOMIA, JUSTICIA). Use OTRO only as a last resort.
+- "quote": the most relevant short verbatim fragment from the transcript, in its ORIGINAL language (or "" if none)
+- "speaker": who said it, using a real name when known; never "Speaker N"; null if unknown
+
+Return ONLY a JSON array of these objects. No markdown, no text outside the array. If nothing is noteworthy, return [].`;
+
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
 function parseSpeakersFromTitle(title) {
@@ -282,7 +296,7 @@ async function onNewSentence(text, speakerId) {
     const flushLexSummary = buildLexicalSummary(flushLexSnapshot);
     windowLexical = resetLexical();
     windowStartTime = null;
-    await evaluateClaims(flushText, pageTitle, flushLexSummary, flushLexSnapshot, flushDominantSpeaker, flushDominantId);
+    await extractKeyPoints(flushText, pageTitle, flushLexSummary, flushLexSnapshot, flushDominantSpeaker, flushDominantId);
   }
   lastSpeakerId = speakerId;
 
@@ -331,7 +345,7 @@ async function onNewSentence(text, speakerId) {
     windowStartTime = null;
 
     try {
-      await evaluateClaims(contextText, pageTitle, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId);
+      await extractKeyPoints(contextText, pageTitle, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId);
     } catch (e) {
       console.error('[window] evaluation error:', e);
     }
@@ -439,6 +453,52 @@ async function groundAndUpdate(contextText, fastResults, title, lexicalSummary, 
     }
   } catch (err) {
     console.error('[grounded] error:', err);
+  }
+}
+
+// ── Key points (neutral, no verdict) ──────────────────────────────────────────
+
+async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId) {
+  try {
+    const dateContext = pageDate ? `\nDate: ${pageDate}` : '';
+    const titleNames = parseSpeakersFromTitle(title || '');
+    const speakerLegend = titleNames.length
+      ? `\nParticipants: ${titleNames.join(' and ')}. Attribute each point to the right person; never output "Speaker N".`
+      : `\nIdentify the speaker from context; never output "Speaker N".`;
+    const titleContext = title
+      ? `Event: "${title}"${dateContext}${speakerLegend}\n\n`
+      : '';
+
+    const notedList = [...recentClaims.values()]
+      .filter(v => Array.isArray(v) && v[1])
+      .map(v => v[1])
+      .slice(-15)
+      .join('\n- ');
+    const alreadyNoted = notedList ? `\n\nAlready noted — do NOT repeat:\n- ${notedList}\n` : '';
+
+    const raw = await callClaude(
+      `${titleContext}Transcript: "${contextText}"${alreadyNoted}`,
+      KEYPOINTS_PROMPT
+    );
+    const results = parseArray(raw);
+    const valid = results.filter(r => r.point && !isDuplicate(r.point));
+    if (!valid.length) return;
+
+    if (activeTabId) {
+      sendToTab(activeTabId, {
+        type: 'NEW_KEYPOINTS',
+        results: valid.map(r => ({
+          point: r.point,
+          category: (r.category || 'OTRO').toUpperCase(),
+          quote: r.quote || '',
+          speaker: dominantSpeaker
+            || (r.speaker && !String(r.speaker).match(/^Speaker\s*\d+$/i) ? r.speaker : null),
+          dominantSpeakerId,
+        })),
+      });
+    }
+  } catch (err) {
+    console.error('[keypoints] error:', err);
   }
 }
 

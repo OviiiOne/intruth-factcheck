@@ -5,6 +5,7 @@
 
 const sessionLog = [];
 const transcriptLog = [];
+const keyPointsLog = [];
 let sessionStartTime = null;
 
 function logVerdict(result) {
@@ -28,9 +29,21 @@ function logTranscript(timecode, text) {
   transcriptLog.push({ timecode, text });
 }
 
+// Neutral key points extracted live (no verdict).
+function logKeyPoint(kp) {
+  keyPointsLog.push({
+    timecode: kp._timestamp || '',
+    category: kp.category || 'OTRO',
+    point: kp.point,
+    quote: kp.quote || '',
+    speaker: kp.speaker || null,
+  });
+}
+
 function startSession() {
   sessionLog.length = 0;
   transcriptLog.length = 0;
+  keyPointsLog.length = 0;
   sessionStartTime = Date.now();
 }
 
@@ -39,7 +52,7 @@ function stopSession() {
 }
 
 function exportPDF() {
-  if (!sessionLog.length && !transcriptLog.length) {
+  if (!sessionLog.length && !transcriptLog.length && !keyPointsLog.length) {
     alert('No hay nada que exportar todavía.');
     return;
   }
@@ -111,6 +124,29 @@ function exportPDF() {
     return headerHTML + cardsHTML;
   }).join('');
 
+  const CAT_LABELS = {
+    ANUNCIO: 'Anuncio', CIFRA: 'Cifra', COMPROMISO: 'Compromiso',
+    DECLARACION: 'Declaración', CITA: 'Cita', POLITICA: 'Política', OTRO: 'Otro',
+  };
+  const keyPointsHTML = keyPointsLog.length
+    ? '<div class="claims-title">Puntos clave (' + keyPointsLog.length + ')</div>' +
+      keyPointsLog.map(kp => {
+        const cat = (kp.category || 'OTRO').toUpperCase();
+        const label = CAT_LABELS[cat] || (cat.charAt(0) + cat.slice(1).toLowerCase());
+        const spk = kp.speaker ? '<span class="kp-speaker">' + escapeHtml(kp.speaker) + '</span>' : '';
+        const quote = kp.quote ? '<div class="kp-quote">“' + escapeHtml(kp.quote) + '”</div>' : '';
+        return '<div class="kp-card">' +
+          '<div class="kp-header">' +
+            '<span class="kp-cat">' + escapeHtml(label) + '</span>' +
+            spk +
+            '<span class="timestamp">' + escapeHtml(kp.timecode || '') + '</span>' +
+          '</div>' +
+          '<div class="kp-point">' + escapeHtml(kp.point) + '</div>' +
+          quote +
+        '</div>';
+      }).join('')
+    : '';
+
   const transcriptHTML = transcriptLog.length
     ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
       '<div class="transcript">' +
@@ -159,6 +195,12 @@ function exportPDF() {
     '.speaker-section-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 20px 0 8px; background: #f8f8f8; border-radius: 6px; }' +
     '.speaker-section-name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }' +
     '.speaker-section-count { font-size: 11px; color: #888; margin-left: auto; }' +
+    '.kp-card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }' +
+    '.kp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }' +
+    '.kp-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #1d4ed8; }' +
+    '.kp-speaker { font-size: 11px; font-weight: 600; color: #444; }' +
+    '.kp-point { font-size: 13px; color: #222; margin-bottom: 4px; }' +
+    '.kp-quote { font-size: 12px; font-style: italic; color: #666; }' +
     '.transcript { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-top: 8px; }' +
     '.transcript-line { font-size: 12px; color: #333; line-height: 1.6; margin-bottom: 2px; }' +
     '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
@@ -172,15 +214,18 @@ function exportPDF() {
         '<span>📋 ' + sessionLog.length + ' claim' + (sessionLog.length !== 1 ? 's' : '') + ' detected</span>' +
       '</div>' +
     '</div>' +
-    '<div class="summary">' +
-      '<div class="summary-item"><span class="summary-count true">' + trueCount + '</span><span class="summary-label">True</span></div>' +
-      '<div class="summary-item"><span class="summary-count subtrue">' + subTrueCount + '</span><span class="summary-label">Substantially True</span></div>' +
-      '<div class="summary-item"><span class="summary-count false">' + falseCount + '</span><span class="summary-label">False</span></div>' +
-      '<div class="summary-item"><span class="summary-count misleading">' + misleadingCount + '</span><span class="summary-label">Misleading</span></div>' +
-      '<div class="summary-item"><span class="summary-count unverifiable">' + unverifiableCount + '</span><span class="summary-label">Unverifiable</span></div>' +
-    '</div>' +
-    '<div class="claims-title">Claims (' + sessionLog.length + ')</div>' +
-    claimsHTML +
+    keyPointsHTML +
+    (sessionLog.length
+      ? '<div class="summary">' +
+          '<div class="summary-item"><span class="summary-count true">' + trueCount + '</span><span class="summary-label">True</span></div>' +
+          '<div class="summary-item"><span class="summary-count subtrue">' + subTrueCount + '</span><span class="summary-label">Substantially True</span></div>' +
+          '<div class="summary-item"><span class="summary-count false">' + falseCount + '</span><span class="summary-label">False</span></div>' +
+          '<div class="summary-item"><span class="summary-count misleading">' + misleadingCount + '</span><span class="summary-label">Misleading</span></div>' +
+          '<div class="summary-item"><span class="summary-count unverifiable">' + unverifiableCount + '</span><span class="summary-label">Unverifiable</span></div>' +
+        '</div>' +
+        '<div class="claims-title">Verificados (' + sessionLog.length + ')</div>' +
+        claimsHTML
+      : '') +
     transcriptHTML +
     '</body></html>';
 
