@@ -110,7 +110,7 @@ async function searchWeb(query, retries = 2) {
 
 // ── Claude (direct or proxy) ─────────────────────────────────────────────────
 
-async function callClaude(userMessage, systemPrompt) {
+async function callClaude(userMessage, systemPrompt, grounded = false) {
   let res;
 
   if (PROXY_URL) {
@@ -124,6 +124,7 @@ async function callClaude(userMessage, systemPrompt) {
         model: AI_PROVIDER === 'gemini' ? 'gemini-2.0-flash' : 'claude-haiku-4-5-20251001',
         max_tokens: 768,
         temperature: 0,
+        grounded,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       }),
@@ -147,7 +148,7 @@ async function callClaude(userMessage, systemPrompt) {
     });
   } else {
     if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: 'No API key or proxy configured.' });
-    return '';
+    return { text: '', sources: [] };
   }
 
   const data = await res.json();
@@ -155,10 +156,11 @@ async function callClaude(userMessage, systemPrompt) {
     const msg = data.error.message || 'Unknown API error';
     console.error('[claude] API error:', msg);
     if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg });
-    return '';
+    return { text: '', sources: [] };
   }
   const raw = data.content?.[0]?.text?.trim() || '';
-  return raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  const text = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+  return { text, sources: Array.isArray(data.sources) ? data.sources : [] };
 }
 
 function parseArray(str) {
@@ -402,10 +404,10 @@ async function evaluateClaims(contextText, title, lexicalSummary, lexicalSnapsho
       ? `\n\nClaims already fact-checked — do NOT re-evaluate:\n- ${checkedList}\n`
       : '';
 
-    const raw = await callClaude(
+    const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyChecked}${lexicalContext}`,
       EVALUATE_PROMPT
-    );
+    )).text;
     const results = parseArray(raw);
     const valid = results.filter(r => r.claim && r.verdict && !isDuplicate(r.claim));
 
@@ -443,10 +445,10 @@ async function groundAndUpdate(contextText, fastResults, title, lexicalSummary, 
       try {
         const urls = await searchWeb(fastResult.claim);
         if (!urls.length) return null;
-        const raw = await callClaude(
+        const raw = (await callClaude(
           `${titleContext}Transcript: "${contextText}"\n\nEvaluate ONLY this claim:\n1. ${fastResult.claim}\n\nWeb results:\n${urls.join('\n')}${lexicalContext}`,
           EVALUATE_PROMPT
-        );
+        )).text;
         const results = parseArray(raw);
         const match = results.find(r => r.claim && r.verdict);
         if (!match) return null;
@@ -497,10 +499,10 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
       .join('\n- ');
     const alreadyNoted = notedList ? `\n\nAlready noted — do NOT repeat:\n- ${notedList}\n` : '';
 
-    const raw = await callClaude(
+    const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyNoted}`,
       KEYPOINTS_PROMPT
-    );
+    )).text;
     const results = parseArray(raw);
     const valid = results.filter(r => r.point && !isDuplicate(r.point));
     if (!valid.length) return;
@@ -527,25 +529,23 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 
 async function verifyKeyPoint(id, claim, quote) {
   try {
-    const query = (quote && quote.trim()) ? quote : claim;
-    let urls = [];
-    try { urls = await searchWeb(query); } catch {}
-
     const dateCtx = pageDate ? `\nDate: ${pageDate}` : '';
     const titleCtx = pageTitle ? `Event: "${pageTitle}"${dateCtx}\n\n` : '';
     const quoteCtx = (quote && quote.trim()) ? `\nOriginal quote: "${quote}"` : '';
-    const webBlock = urls.length ? `\n\nWeb results:\n${urls.join('\n')}` : '';
 
-    const raw = await callClaude(
-      `${titleCtx}Evaluate ONLY this claim:\n${claim}${quoteCtx}${webBlock}`,
-      VERIFY_PROMPT
+    // grounded=true → the proxy enables Gemini's native Google Search; the answer
+    // comes back with real sources (no Serper needed).
+    const { text, sources } = await callClaude(
+      `${titleCtx}Evaluate ONLY this claim:\n${claim}${quoteCtx}`,
+      VERIFY_PROMPT,
+      true
     );
-    const result = parseObject(raw);
+    const result = parseObject(text);
     if (activeTabId) {
       sendToTab(activeTabId, {
         type: 'KEYPOINT_VERDICT',
         id,
-        result: result ? { ...result, sources: urls } : null,
+        result: result ? { ...result, sources: sources || [] } : null,
       });
     }
   } catch (err) {
@@ -575,7 +575,7 @@ function needsTranslation() {
 async function translateToSpanish(text) {
   if (!text || !text.trim()) return '';
   try {
-    const out = await callClaude(text, TRANSLATE_PROMPT);
+    const out = (await callClaude(text, TRANSLATE_PROMPT)).text;
     return (out || '').trim();
   } catch {
     return '';

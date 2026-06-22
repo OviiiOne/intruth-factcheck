@@ -38,12 +38,12 @@ app.use((req, res, next) => {
 });
 
 // Gemini: convert Claude-style messages to Gemini format
-function toGeminiRequest(system, messages, temperature, maxTokens) {
+function toGeminiRequest(system, messages, temperature, maxTokens, grounded) {
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }],
   }));
-  return {
+  const req = {
     system_instruction: system ? { parts: [{ text: system }] } : undefined,
     contents,
     generationConfig: {
@@ -51,15 +51,22 @@ function toGeminiRequest(system, messages, temperature, maxTokens) {
       maxOutputTokens: Math.min(maxTokens || 768, 2048),
     },
   };
+  // Let Gemini search Google itself and ground the answer in real results.
+  if (grounded) req.tools = [{ google_search: {} }];
+  return req;
 }
 
-// Gemini: convert response to Claude-compatible format
+// Gemini: convert response to Claude-compatible format (+ grounding sources)
 function fromGeminiResponse(data) {
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const cand = data.candidates?.[0];
+  const text = (cand?.content?.parts || []).map(p => p.text).filter(Boolean).join('') || '';
+  const chunks = cand?.groundingMetadata?.groundingChunks || [];
+  const sources = chunks.map(c => c.web?.uri).filter(Boolean);
   return {
     content: [{ type: 'text', text }],
     model: 'gemini-2.0-flash',
     stop_reason: 'end_turn',
+    sources,
   };
 }
 
@@ -84,10 +91,10 @@ async function handleClaude(body) {
 }
 
 async function handleGemini(body) {
-  const { max_tokens, temperature, system, messages } = body;
+  const { max_tokens, temperature, system, messages, grounded } = body;
   const geminiModel = 'gemini-2.0-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_KEY}`;
-  const geminiBody = toGeminiRequest(system, messages, temperature, max_tokens);
+  const geminiBody = toGeminiRequest(system, messages, temperature, max_tokens, grounded);
 
   const response = await fetch(url, {
     method: 'POST',
