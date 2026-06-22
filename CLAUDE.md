@@ -3,6 +3,13 @@
 You are a learning system. Every session, you improve by capturing what works,
 extracting patterns, and evolving your own configuration. This is your operating loop.
 
+## This Workspace
+- **Use case**: Software / code. Origin = browser extension for real-time
+  factchecking; being adapted to serve several work-related purposes.
+- **User**: Spanish speaker, not a developer — explain in plain language.
+- Evolving via `.claude/learnings.md` → `.claude/rules/`.
+- Note: `.claude/` is gitignored here (local-only) — do NOT commit it.
+
 ## Bootstrap (Session 1)
 If .claude/ is missing or minimal:
 1. Ask (via AskUserQuestion): "How will you primarily use this workspace?"
