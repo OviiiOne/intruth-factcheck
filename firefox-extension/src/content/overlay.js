@@ -16,6 +16,7 @@ let transcriptFeedEl = null;
 let interimEl = null;
 let claimFeedEl = null;
 let verdictListEl = null;
+let summaryEl = null;
 let transcriptCollapsed = false;
 const pendingCards    = new Map();
 const pendingCardTimes = new Map();
@@ -289,11 +290,13 @@ function createPanel() {
     '<div id="rtfc-header">',
       '<span><span class="rtfc-dot"></span>InTruth</span>',
       '<div class="rtfc-header-actions">',
-        '<button id="rtfc-export" title="Export session as PDF">↓ Export</button>',
+        '<button id="rtfc-summary-btn" title="Generar resumen">🧾 Resumen</button>',
+        '<button id="rtfc-export" title="Exportar sesión">↓ Exportar</button>',
         '<button id="rtfc-close">✕</button>',
       '</div>',
     '</div>',
     '<div id="rtfc-body">',
+      '<div id="rtfc-summary" style="display:none"></div>',
       '<div id="rtfc-transcript-section">',
         '<div class="rtfc-section-header">',
           '<span class="rtfc-section-label">Transcript</span>',
@@ -320,6 +323,7 @@ function createPanel() {
   interimEl        = panel.querySelector('#rtfc-interim');
   claimFeedEl      = panel.querySelector('#rtfc-claim-feed');
   verdictListEl    = panel.querySelector('#rtfc-verdicts');
+  summaryEl        = panel.querySelector('#rtfc-summary');
 
   panel.querySelector('#rtfc-close').addEventListener('click', () => {
     browser.runtime.sendMessage({ type: 'STOP_FACTCHECK' });
@@ -327,6 +331,7 @@ function createPanel() {
   });
 
   panel.querySelector('#rtfc-export').addEventListener('click', () => exportPDF());
+  panel.querySelector('#rtfc-summary-btn').addEventListener('click', () => generateSummary());
 
   makeDraggable(panel);
 
@@ -345,6 +350,7 @@ function removePanel() {
   interimEl = null;
   claimFeedEl = null;
   verdictListEl = null;
+  summaryEl = null;
   transcriptCollapsed = false;
   pendingCards.clear();
   pendingCardTimes.clear();
@@ -732,6 +738,37 @@ function applyKeyPointVerdict(id, result) {
   if (typeof updateKeyPointVerdict === 'function') updateKeyPointVerdict(id, result);
 }
 
+// ── Final summary ──────────────────────────────────────────────────────────────
+
+function generateSummary() {
+  if (typeof buildSummaryInput !== 'function') return;
+  const input = buildSummaryInput();
+  if (!input || !input.trim()) { showError('Aún no hay contenido para resumir.'); return; }
+  if (summaryEl) {
+    summaryEl.style.display = '';
+    summaryEl.innerHTML =
+      '<div class="rtfc-summary-title">Resumen</div>' +
+      '<div class="rtfc-summary-body rtfc-summary-loading">Generando resumen…</div>';
+  }
+  browser.runtime.sendMessage({ type: 'SUMMARIZE', input });
+}
+
+function renderSummary(text) {
+  if (!summaryEl) return;
+  summaryEl.style.display = '';
+  const title = '<div class="rtfc-summary-title">Resumen</div>';
+  if (!text || !text.trim()) {
+    summaryEl.innerHTML = title + '<div class="rtfc-summary-body">No se pudo generar el resumen.</div>';
+    return;
+  }
+  summaryEl.innerHTML = title;
+  const body = document.createElement('div');
+  body.className = 'rtfc-summary-body';
+  body.textContent = text;
+  summaryEl.appendChild(body);
+  if (typeof setSummary === 'function') setSummary(text);
+}
+
 function makeDraggable(panel) {
   const header = panel.querySelector('#rtfc-header');
   let isDragging = false, startX, startY, startLeft, startTop;
@@ -820,6 +857,10 @@ browser.runtime.onMessage.addListener((msg) => {
 
     case 'KEYPOINT_VERDICT':
       applyKeyPointVerdict(msg.id, msg.result);
+      break;
+
+    case 'SUMMARY_RESULT':
+      renderSummary(msg.text || '');
       break;
 
     case 'NEW_VERDICT':

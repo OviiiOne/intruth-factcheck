@@ -6,6 +6,7 @@
 const sessionLog = [];
 const transcriptLog = [];
 const keyPointsLog = [];
+let sessionSummary = '';
 let sessionStartTime = null;
 
 function logVerdict(result) {
@@ -53,10 +54,29 @@ function updateKeyPointVerdict(id, result) {
   entry.sources = result.sources || [];
 }
 
+// Compact input for the final summary: prefer the curated key points; fall back to
+// the (capped) transcript if there are none yet.
+function buildSummaryInput() {
+  const title = document.title || '';
+  if (keyPointsLog.length) {
+    const lines = keyPointsLog.map(kp => {
+      const spk = kp.speaker ? kp.speaker + ': ' : '';
+      const v = kp.verdict ? ' [Verificado: ' + kp.verdict + ']' : '';
+      return '- [' + (kp.timecode || '') + '] ' + spk + kp.point + v;
+    });
+    return 'Título: ' + title + '\n\nPuntos clave:\n' + lines.join('\n');
+  }
+  const tr = transcriptLog.map(t => t.translation || t.text).join(' ');
+  return 'Título: ' + title + '\n\nTranscripción:\n' + tr.slice(0, 8000);
+}
+
+function setSummary(text) { sessionSummary = text || ''; }
+
 function startSession() {
   sessionLog.length = 0;
   transcriptLog.length = 0;
   keyPointsLog.length = 0;
+  sessionSummary = '';
   sessionStartTime = Date.now();
 }
 
@@ -65,7 +85,7 @@ function stopSession() {
 }
 
 function exportPDF() {
-  if (!sessionLog.length && !transcriptLog.length && !keyPointsLog.length) {
+  if (!sessionLog.length && !transcriptLog.length && !keyPointsLog.length && !sessionSummary) {
     alert('No hay nada que exportar todavía.');
     return;
   }
@@ -176,6 +196,11 @@ function exportPDF() {
       }).join('')
     : '';
 
+  const summaryHTML = sessionSummary
+    ? '<div class="summary-box"><div class="summary-box-title">Resumen</div>' +
+      '<div class="summary-box-text">' + escapeHtml(sessionSummary) + '</div></div>'
+    : '';
+
   const transcriptHTML = transcriptLog.length
     ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
       '<div class="transcript">' +
@@ -227,6 +252,9 @@ function exportPDF() {
     '.speaker-section-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 20px 0 8px; background: #f8f8f8; border-radius: 6px; }' +
     '.speaker-section-name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }' +
     '.speaker-section-count { font-size: 11px; color: #888; margin-left: auto; }' +
+    '.summary-box { border: 1px solid #d4d4d4; background: #fafafa; border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }' +
+    '.summary-box-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #555; margin-bottom: 8px; }' +
+    '.summary-box-text { font-size: 13px; color: #222; line-height: 1.6; white-space: pre-wrap; }' +
     '.kp-card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; page-break-inside: avoid; }' +
     '.kp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }' +
     '.kp-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #1d4ed8; }' +
@@ -249,6 +277,7 @@ function exportPDF() {
         '<span>📋 ' + sessionLog.length + ' claim' + (sessionLog.length !== 1 ? 's' : '') + ' detected</span>' +
       '</div>' +
     '</div>' +
+    summaryHTML +
     keyPointsHTML +
     (sessionLog.length
       ? '<div class="summary">' +

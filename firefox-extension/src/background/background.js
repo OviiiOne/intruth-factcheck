@@ -57,6 +57,15 @@ Return ONLY a JSON object (no array, no markdown) with:
 
 No text outside the JSON object.`;
 
+const SUMMARY_PROMPT = `You are summarizing a live press conference for a Spanish-speaking professional. Using the key points (and any transcript) the user provides, write a clear, structured summary IN SPANISH, in PLAIN TEXT (no Markdown symbols like # or *).
+
+Format:
+- Start with a short overview paragraph (2-3 sentences).
+- Then a blank line, then the main points, each on its own line starting with "• ", attributed to the speaker when known.
+- If some points were fact-checked, add a final short section with the verdicts.
+
+Be concise and neutral. Return only the summary text.`;
+
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
 function parseSpeakersFromTitle(title) {
@@ -110,7 +119,7 @@ async function searchWeb(query, retries = 2) {
 
 // ── Claude (direct or proxy) ─────────────────────────────────────────────────
 
-async function callClaude(userMessage, systemPrompt, grounded = false) {
+async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768) {
   let res;
 
   if (PROXY_URL) {
@@ -122,7 +131,7 @@ async function callClaude(userMessage, systemPrompt, grounded = false) {
       body: JSON.stringify({
         provider: AI_PROVIDER,
         model: AI_PROVIDER === 'gemini' ? 'gemini-2.0-flash' : 'claude-haiku-4-5-20251001',
-        max_tokens: 768,
+        max_tokens: maxTokens,
         temperature: 0,
         grounded,
         system: systemPrompt,
@@ -140,7 +149,7 @@ async function callClaude(userMessage, systemPrompt, grounded = false) {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 768,
+        max_tokens: maxTokens,
         temperature: 0,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
@@ -554,6 +563,18 @@ async function verifyKeyPoint(id, claim, quote) {
   }
 }
 
+// ── Final summary (on demand) ──────────────────────────────────────────────────
+
+async function summarizeSession(input) {
+  try {
+    const { text } = await callClaude(input, SUMMARY_PROMPT, false, 1536);
+    if (activeTabId) sendToTab(activeTabId, { type: 'SUMMARY_RESULT', text: text || '' });
+  } catch (err) {
+    console.error('[summary] error:', err);
+    if (activeTabId) sendToTab(activeTabId, { type: 'SUMMARY_RESULT', text: '' });
+  }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let activeTabId = null;
@@ -660,6 +681,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 
     case 'VERIFY_KEYPOINT':
       verifyKeyPoint(msg.id, msg.claim, msg.quote);
+      return Promise.resolve();
+
+    case 'SUMMARIZE':
+      summarizeSession(msg.input || '');
       return Promise.resolve();
 
     case 'GET_STATUS':
