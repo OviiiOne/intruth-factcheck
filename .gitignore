@@ -1,0 +1,12 @@
+# Claude Code local files
+.claude/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+.env.local
