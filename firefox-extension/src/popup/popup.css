@@ -160,6 +160,21 @@ body {
 .toggle-btn.active { background: #166534; }
 .toggle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ── Hints ── */
+
+.gladia-hint {
+  font-size: 9px;
+  color: #444;
+  line-height: 1.4;
+}
+
+.optional {
+  font-weight: 400;
+  color: #444;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* ── Firefox note ── */
 
 .firefox-note {

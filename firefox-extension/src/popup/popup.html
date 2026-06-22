@@ -37,9 +37,10 @@
       </div>
 
       <div class="key-field">
-        <label class="key-label">Deepgram API Key</label>
-        <input class="key-input" id="deepgramKey" type="password" placeholder="your deepgram key..." autocomplete="off"/>
+        <label class="key-label">Gladia API Key <span class="optional">(optional)</span></label>
+        <input class="key-input" id="gladiaKey" type="password" placeholder="your gladia key..." autocomplete="off"/>
       </div>
+      <div class="gladia-hint">Free 10h/month at gladia.io — without key, uses microphone via Web Speech API (no speaker detection).</div>
 
       <div class="key-hint" id="keyHint"></div>
     </div>
@@ -47,7 +48,8 @@
     <button class="toggle-btn" id="toggleBtn">Start Fact-Checking</button>
 
     <div class="firefox-note">
-      Firefox uses screen sharing for audio capture. When prompted, share a tab and enable "Share audio".
+      With Gladia: share a tab with "Share audio" enabled.<br/>
+      Without Gladia: uses your microphone directly.
     </div>
   </div>
   <script src="popup.js"></script>

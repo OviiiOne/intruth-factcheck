@@ -2,7 +2,7 @@ const toggleBtn = document.getElementById('toggleBtn');
 const statusEl = document.getElementById('status');
 const anthropicEl = document.getElementById('anthropicKey');
 const proxyUrlEl = document.getElementById('proxyUrl');
-const deepgramEl = document.getElementById('deepgramKey');
+const gladiaEl = document.getElementById('gladiaKey');
 const keyHint = document.getElementById('keyHint');
 const keysSection = document.getElementById('keysSection');
 const modeApiKeyBtn = document.getElementById('modeApiKey');
@@ -15,10 +15,10 @@ let mode = 'apikey';
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'deepgramKey', 'connectionMode']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'connectionMode']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
-  if (data.deepgramKey) { deepgramEl.value = data.deepgramKey; deepgramEl.classList.add('saved'); }
+  if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.connectionMode === 'proxy') switchMode('proxy');
   updateHint();
 });
@@ -47,7 +47,7 @@ modeProxyBtn.addEventListener('click', () => switchMode('proxy'));
 
 // ── Save keys on change ───────────────────────────────────────────────────────
 
-[anthropicEl, proxyUrlEl, deepgramEl].forEach(el => {
+[anthropicEl, proxyUrlEl, gladiaEl].forEach(el => {
   el.addEventListener('input', () => { el.classList.remove('saved'); updateHint(); });
   el.addEventListener('change', () => {
     const key = el.id;
@@ -58,23 +58,19 @@ modeProxyBtn.addEventListener('click', () => switchMode('proxy'));
 });
 
 function updateHint() {
-  const hasDeepgram = deepgramEl.value.trim();
   const hasClaude = mode === 'proxy' ? proxyUrlEl.value.trim() : anthropicEl.value.trim();
+  const hasGladia = gladiaEl.value.trim();
 
-  if (!hasDeepgram && !hasClaude) {
-    keyHint.textContent = 'Configure your keys to start.';
-    keyHint.className = 'key-hint';
-    toggleBtn.disabled = !isActive;
-  } else if (!hasDeepgram) {
-    keyHint.textContent = 'Deepgram key needed for transcription.';
-    keyHint.className = 'key-hint error';
-    toggleBtn.disabled = !isActive;
-  } else if (!hasClaude) {
+  if (!hasClaude) {
     keyHint.textContent = mode === 'proxy' ? 'Enter your proxy URL.' : 'Enter your Anthropic API key.';
     keyHint.className = 'key-hint error';
     toggleBtn.disabled = !isActive;
+  } else if (!hasGladia) {
+    keyHint.textContent = 'Ready — will use microphone (Web Speech API).';
+    keyHint.className = 'key-hint ok';
+    toggleBtn.disabled = false;
   } else {
-    keyHint.textContent = 'Ready.';
+    keyHint.textContent = 'Ready — will use Gladia for transcription.';
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   }
@@ -105,15 +101,9 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  const deepgramKey = deepgramEl.value.trim();
   const anthropicKey = anthropicEl.value.trim();
   const proxyUrl = proxyUrlEl.value.trim();
-
-  if (!deepgramKey) {
-    keyHint.textContent = 'Deepgram key is required for transcription.';
-    keyHint.className = 'key-hint error';
-    return;
-  }
+  const gladiaKey = gladiaEl.value.trim();
 
   if (mode === 'apikey' && !anthropicKey) {
     keyHint.textContent = 'Enter your Anthropic API key.';
@@ -127,7 +117,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, deepgramKey, connectionMode: mode });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, connectionMode: mode });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });
