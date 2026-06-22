@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  background: rgba(15, 15, 15, 0.82);
+  color: #e8e8e8;
+  width: 280px;
+}
+
+.popup {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #e8e8e8;
+}
+
+.logo { font-size: 16px; opacity: 0.7; }
+
+.badge {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+  padding: 2px 5px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.status {
+  font-size: 11px;
+  font-weight: 500;
+  color: #666;
+  letter-spacing: 0.01em;
+}
+
+.status.active { color: #4ade80; }
+
+/* ── Mode toggle ── */
+
+.mode-toggle {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 0.5px solid rgba(255,255,255,0.1);
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #555;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 5px 0;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mode-btn.active {
+  background: rgba(255,255,255,0.08);
+  color: #e8e8e8;
+}
+
+.mode-btn:hover:not(.active) { color: #888; }
+
+.proxy-hint {
+  font-size: 9px;
+  color: #444;
+  line-height: 1.4;
+}
+
+/* ── Key fields ── */
+
+.keys-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.key-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #555;
+}
+
+.key-input {
+  background: rgba(255,255,255,0.05);
+  border: 0.5px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  color: #e8e8e8;
+  font-family: 'Inter', monospace;
+  font-size: 10px;
+  padding: 5px 8px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.key-input::placeholder { color: #444; }
+.key-input:focus { border-color: rgba(255,255,255,0.25); }
+
+.key-input.saved {
+  border-color: rgba(74, 222, 128, 0.3);
+  color: #888;
+}
+
+.key-hint {
+  font-size: 10px;
+  color: #555;
+  min-height: 14px;
+}
+
+.key-hint.error { color: #f87171; }
+.key-hint.ok    { color: #4ade80; }
+
+/* ── Toggle button ── */
+
+.toggle-btn {
+  background: rgba(30,30,30,0.9);
+  color: #f5f5f3;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  text-align: left;
+  width: 100%;
+}
+
+.toggle-btn:hover { opacity: 0.85; }
+.toggle-btn.active { background: #166534; }
+.toggle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Firefox note ── */
+
+.firefox-note {
+  font-size: 9px;
+  color: #444;
+  line-height: 1.4;
+  padding-top: 4px;
+  border-top: 0.5px solid rgba(255,255,255,0.06);
+}

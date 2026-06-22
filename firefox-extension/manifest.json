@@ -1,0 +1,59 @@
+{
+  "manifest_version": 2,
+  "name": "InTruth",
+  "version": "2.0.0",
+  "description": "Real-time fact-checking of political speech and debates",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "intruth@intruth.dev",
+      "strict_min_version": "109.0"
+    }
+  },
+
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs"
+  ],
+
+  "background": {
+    "scripts": ["src/background/background.js"],
+    "persistent": false
+  },
+
+  "browser_action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    }
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://www.jubileemedia.com/*",
+        "https://*.jubilee.com/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/content/lexical-features.js",
+        "src/content/session-export.js",
+        "src/content/audio-capture.js",
+        "src/content/overlay.js"
+      ],
+      "css": ["src/content/overlay.css"]
+    }
+  ],
+
+  "icons": {
+    "16": "assets/icon16.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+
+  "content_security_policy": "script-src 'self'; object-src 'self';"
+}

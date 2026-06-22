@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <link rel="stylesheet" href="popup.css"/>
+</head>
+<body>
+  <div class="popup">
+    <div class="header">
+      <span class="logo">⬡</span>
+      <span class="title">InTruth</span>
+      <span class="badge">Firefox</span>
+    </div>
+
+    <div class="status" id="status">Inactive</div>
+
+    <div class="keys-section" id="keysSection">
+
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="modeApiKey">API Key</button>
+        <button class="mode-btn" id="modeProxy">Proxy</button>
+      </div>
+
+      <div id="apiKeyFields">
+        <div class="key-field">
+          <label class="key-label">Anthropic API Key</label>
+          <input class="key-input" id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off"/>
+        </div>
+      </div>
+
+      <div id="proxyFields" style="display:none">
+        <div class="key-field">
+          <label class="key-label">Proxy URL</label>
+          <input class="key-input" id="proxyUrl" type="url" placeholder="https://your-proxy.example.com/api" autocomplete="off"/>
+        </div>
+        <div class="proxy-hint">The proxy forwards requests to Claude without exposing your API key in the browser.</div>
+      </div>
+
+      <div class="key-field">
+        <label class="key-label">Deepgram API Key</label>
+        <input class="key-input" id="deepgramKey" type="password" placeholder="your deepgram key..." autocomplete="off"/>
+      </div>
+
+      <div class="key-hint" id="keyHint"></div>
+    </div>
+
+    <button class="toggle-btn" id="toggleBtn">Start Fact-Checking</button>
+
+    <div class="firefox-note">
+      Firefox uses screen sharing for audio capture. When prompted, share a tab and enable "Share audio".
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
