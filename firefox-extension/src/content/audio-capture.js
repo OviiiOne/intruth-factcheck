@@ -236,22 +236,76 @@ async function loadWhisperModel() {
   whisperLoading = true;
 
   try {
-    // Dynamic import from CDN
-    const { pipeline } = await import(
-      /* webpackIgnore: true */
-      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1/dist/transformers.min.js'
-    );
+    // Content scripts can't use dynamic import() from CDN directly.
+    // Inject transformers.js into the page context and bridge back via CustomEvent.
+    const loaded = await new Promise((resolve, reject) => {
+      const handler = (e) => {
+        window.removeEventListener('__intruth_whisper_ready', handler);
+        if (e.detail?.error) reject(new Error(e.detail.error));
+        else resolve(true);
+      };
+      window.addEventListener('__intruth_whisper_ready', handler);
 
-    whisperPipeline = await pipeline(
-      'automatic-speech-recognition',
-      'onnx-community/whisper-tiny.en',
-      {
-        dtype: 'q8',
-        device: 'wasm',
+      const script = document.createElement('script');
+      script.textContent = `
+        (async () => {
+          try {
+            const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1/dist/transformers.min.js');
+            window.__intruth_pipeline = await pipeline(
+              'automatic-speech-recognition',
+              'onnx-community/whisper-tiny.en',
+              { dtype: 'q8', device: 'wasm' }
+            );
+            window.dispatchEvent(new CustomEvent('__intruth_whisper_ready', { detail: { ok: true } }));
+          } catch (err) {
+            window.dispatchEvent(new CustomEvent('__intruth_whisper_ready', { detail: { error: err.message } }));
+          }
+        })();
+      `;
+      document.documentElement.appendChild(script);
+      script.remove();
+
+      setTimeout(() => reject(new Error('Whisper model load timed out (60s)')), 60000);
+    });
+
+    // Bridge: content script calls page-context pipeline via CustomEvent
+    whisperPipeline = {
+      transcribe: (audioData, opts) => {
+        return new Promise((resolve, reject) => {
+          const handler = (e) => {
+            window.removeEventListener('__intruth_whisper_result', handler);
+            if (e.detail?.error) reject(new Error(e.detail.error));
+            else resolve(e.detail.result);
+          };
+          window.addEventListener('__intruth_whisper_result', handler);
+
+          // Pass audio as array (CustomEvent can carry structured clone data)
+          window.dispatchEvent(new CustomEvent('__intruth_whisper_transcribe', {
+            detail: { audio: Array.from(audioData), opts }
+          }));
+
+          setTimeout(() => reject(new Error('Whisper transcription timed out')), 30000);
+        });
       }
-    );
+    };
 
-    console.log('[whisper] model loaded');
+    // Inject the transcription listener into page context
+    const listenerScript = document.createElement('script');
+    listenerScript.textContent = `
+      window.addEventListener('__intruth_whisper_transcribe', async (e) => {
+        try {
+          const audio = new Float32Array(e.detail.audio);
+          const result = await window.__intruth_pipeline(audio, e.detail.opts || {});
+          window.dispatchEvent(new CustomEvent('__intruth_whisper_result', { detail: { result } }));
+        } catch (err) {
+          window.dispatchEvent(new CustomEvent('__intruth_whisper_result', { detail: { error: err.message } }));
+        }
+      });
+    `;
+    document.documentElement.appendChild(listenerScript);
+    listenerScript.remove();
+
+    console.log('[whisper] model loaded via page context bridge');
   } finally {
     whisperLoading = false;
   }
@@ -325,7 +379,7 @@ async function processWhisperChunks() {
       speaker: null,
     });
 
-    const result = await whisperPipeline(merged, {
+    const result = await whisperPipeline.transcribe(merged, {
       language: 'en',
       task: 'transcribe',
       chunk_length_s: 30,

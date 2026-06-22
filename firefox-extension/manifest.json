@@ -18,8 +18,7 @@
   ],
 
   "background": {
-    "scripts": ["src/background/background.js"],
-    "persistent": false
+    "scripts": ["src/background/background.js"]
   },
 
   "browser_action": {
@@ -35,9 +34,10 @@
     {
       "matches": [
         "https://www.youtube.com/*",
-        "https://www.jubileemedia.com/*",
+        "https://www.twitch.tv/*",
+        "https://*.c-span.org/*",
         "https://*.jubilee.com/*",
-        "https://*/*"
+        "https://www.jubileemedia.com/*"
       ],
       "js": [
         "src/content/lexical-features.js",
@@ -55,5 +55,5 @@
     "128": "assets/icon128.png"
   },
 
-  "content_security_policy": "script-src 'self'; object-src 'self';"
+  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net; object-src 'self';"
 }
