@@ -9,7 +9,12 @@ let socket = null;
 let captureActive = false;
 let utteranceBuffer = '';
 let gladiaKey = '';
+let gladiaProxyUrl = ''; // set when Gladia should be started via the proxy (key server-side)
+let sourceLanguage = 'auto'; // 'auto' | ISO code (es, en, fr, ar, he, fa, ...)
 let transcriptionMode = 'none'; // 'gladia' | 'whisper'
+
+// Multilingual Whisper model (replaces English-only whisper-tiny.en).
+const WHISPER_MODEL = 'onnx-community/whisper-base';
 
 // Whisper state
 let whisperPipeline = null;
@@ -25,8 +30,17 @@ const WHISPER_SAMPLE_RATE = 16000;
 async function startAudioCapture() {
   if (captureActive) return;
 
-  const data = await browser.storage.local.get(['gladiaKey']);
+  const data = await browser.storage.local.get(['gladiaKey', 'sourceLanguage', 'proxyUrl', 'connectionMode']);
   gladiaKey = data.gladiaKey || '';
+  sourceLanguage = data.sourceLanguage || 'auto';
+
+  // In proxy mode without a direct key, start Gladia through the proxy so the
+  // Gladia key stays on the server (Railway), never in the browser.
+  gladiaProxyUrl = '';
+  if (!gladiaKey && data.connectionMode === 'proxy' && data.proxyUrl) {
+    try { gladiaProxyUrl = new URL('/gladia/live', data.proxyUrl).href; }
+    catch { gladiaProxyUrl = ''; }
+  }
 
   // Always need tab audio — request getDisplayMedia first
   try {
@@ -45,7 +59,7 @@ async function startAudioCapture() {
     mediaStream.getVideoTracks().forEach(t => t.stop());
     captureActive = true;
 
-    if (gladiaKey) {
+    if (gladiaKey || gladiaProxyUrl) {
       transcriptionMode = 'gladia';
       utteranceBuffer = '';
       connectGladia();
@@ -68,20 +82,24 @@ async function startAudioCapture() {
 
 async function connectGladia() {
   try {
-    const initRes = await fetch('https://api.gladia.io/v2/live', {
+    // Direct (key in browser) or via proxy (key on server). Proxy forwards to Gladia.
+    const initUrl = gladiaKey ? 'https://api.gladia.io/v2/live' : gladiaProxyUrl;
+    const initHeaders = gladiaKey
+      ? { 'Content-Type': 'application/json', 'x-gladia-key': gladiaKey }
+      : { 'Content-Type': 'application/json' };
+
+    const initRes = await fetch(initUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-gladia-key': gladiaKey,
-      },
+      headers: initHeaders,
       body: JSON.stringify({
         encoding: 'wav/pcm',
         sample_rate: 16000,
         channels: 1,
-        language_config: {
-          languages: ['en'],
-          code_switching: false,
-        },
+        // 'auto' → empty list lets Gladia auto-detect (code_switching allows mid-stream changes).
+        // Specific language → pin it for best accuracy.
+        language_config: sourceLanguage === 'auto'
+          ? { languages: [], code_switching: true }
+          : { languages: [sourceLanguage], code_switching: false },
         realtime_processing: {
           words_accurate_timestamps: true,
         },
@@ -208,7 +226,7 @@ function fallbackToWhisper() {
 async function startWithWhisper() {
   browser.runtime.sendMessage({
     type: 'PIPELINE_ERROR',
-    message: 'Loading local Whisper model (~75MB, first time only)...',
+    message: 'Cargando modelo Whisper local (~150MB, solo la 1ª vez)...',
   });
 
   try {
@@ -253,7 +271,7 @@ async function loadWhisperModel() {
             const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1/dist/transformers.min.js');
             window.__intruth_pipeline = await pipeline(
               'automatic-speech-recognition',
-              'onnx-community/whisper-tiny.en',
+              '${WHISPER_MODEL}',
               { dtype: 'q8', device: 'wasm' }
             );
             window.dispatchEvent(new CustomEvent('__intruth_whisper_ready', { detail: { ok: true } }));
@@ -379,12 +397,15 @@ async function processWhisperChunks() {
       speaker: null,
     });
 
-    const result = await whisperPipeline.transcribe(merged, {
-      language: 'en',
+    // 'auto' → omit language so multilingual Whisper detects it per chunk.
+    const whisperOpts = {
       task: 'transcribe',
       chunk_length_s: 30,
       stride_length_s: 5,
-    });
+    };
+    if (sourceLanguage !== 'auto') whisperOpts.language = sourceLanguage;
+
+    const result = await whisperPipeline.transcribe(merged, whisperOpts);
 
     const text = (result?.text || '').trim();
     if (text && text !== '...' && text.length > 1) {

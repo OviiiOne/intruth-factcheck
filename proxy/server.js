@@ -3,6 +3,7 @@ const app = express();
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GLADIA_KEY = process.env.GLADIA_API_KEY || '';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const PORT = process.env.PORT || 3000;
 
@@ -115,11 +116,35 @@ app.post('/', async (req, res) => {
   }
 });
 
+// Gladia: start a live session server-side so the Gladia key never reaches the
+// browser. The client sends the session config; we add the key and forward.
+// Gladia returns a pre-authorized WebSocket URL the browser connects to directly.
+app.post('/gladia/live', async (req, res) => {
+  if (!GLADIA_KEY) {
+    return res.status(400).json({ error: { message: 'GLADIA_API_KEY not configured on the proxy' } });
+  }
+  try {
+    const response = await fetch('https://api.gladia.io/v2/live', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-gladia-key': GLADIA_KEY,
+      },
+      body: JSON.stringify(req.body || {}),
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    console.error('Gladia proxy error:', err.message);
+    res.status(502).json({ error: { message: 'Proxy failed to reach Gladia' } });
+  }
+});
+
 app.get('/health', (req, res) => {
   const providers = [];
   if (ANTHROPIC_KEY) providers.push('claude');
   if (GEMINI_KEY) providers.push('gemini');
-  res.json({ status: 'ok', providers });
+  res.json({ status: 'ok', providers, gladia: !!GLADIA_KEY });
 });
 
 app.listen(PORT, () => {

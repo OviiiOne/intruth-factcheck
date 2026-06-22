@@ -4,12 +4,14 @@
 // Reuses escapeHtml() defined in overlay.js (loaded first in manifest.json).
 
 const sessionLog = [];
+const transcriptLog = [];
 let sessionStartTime = null;
 
 function logVerdict(result) {
   sessionLog.push({
     timestamp: new Date().toISOString(),
     secondsElapsed: sessionStartTime ? Math.round((Date.now() - sessionStartTime) / 1000) : 0,
+    clockTimestamp: result._timestamp || '',
     claim: result.claim,
     verdict: result.verdict,
     confidence: result.confidence,
@@ -21,8 +23,14 @@ function logVerdict(result) {
   });
 }
 
+// Full session transcript, each line tagged with its clock timecode HH:MM:SS:FF.
+function logTranscript(timecode, text) {
+  transcriptLog.push({ timecode, text });
+}
+
 function startSession() {
   sessionLog.length = 0;
+  transcriptLog.length = 0;
   sessionStartTime = Date.now();
 }
 
@@ -31,8 +39,8 @@ function stopSession() {
 }
 
 function exportPDF() {
-  if (!sessionLog.length) {
-    alert('No claims detected in this session yet.');
+  if (!sessionLog.length && !transcriptLog.length) {
+    alert('No hay nada que exportar todavía.');
     return;
   }
 
@@ -73,7 +81,8 @@ function exportPDF() {
     const cardsHTML = speakerGroups[spk].map(({ entry, i }) => {
       const minutes = Math.floor(entry.secondsElapsed / 60);
       const seconds = entry.secondsElapsed % 60;
-      const timestamp = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+      const timestamp = entry.clockTimestamp ||
+        (String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0'));
       const vcolor = verdictColor(entry.verdict, entry.confidence);
 
       const sourcesHTML = entry.sources.length
@@ -101,6 +110,18 @@ function exportPDF() {
 
     return headerHTML + cardsHTML;
   }).join('');
+
+  const transcriptHTML = transcriptLog.length
+    ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
+      '<div class="transcript">' +
+        transcriptLog.map(t =>
+          '<div class="transcript-line">' +
+            '<span class="transcript-tc">[' + escapeHtml(t.timecode) + ']</span> ' +
+            escapeHtml(t.text) +
+          '</div>'
+        ).join('') +
+      '</div>'
+    : '';
 
   const trueCount = sessionLog.filter(e => e.verdict === 'TRUE').length;
   const subTrueCount = sessionLog.filter(e => e.verdict === 'SUBSTANTIALLY TRUE').length;
@@ -138,6 +159,9 @@ function exportPDF() {
     '.speaker-section-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; margin: 20px 0 8px; background: #f8f8f8; border-radius: 6px; }' +
     '.speaker-section-name { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }' +
     '.speaker-section-count { font-size: 11px; color: #888; margin-left: auto; }' +
+    '.transcript { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-top: 8px; }' +
+    '.transcript-line { font-size: 12px; color: #333; line-height: 1.6; margin-bottom: 2px; }' +
+    '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +
@@ -157,6 +181,7 @@ function exportPDF() {
     '</div>' +
     '<div class="claims-title">Claims (' + sessionLog.length + ')</div>' +
     claimsHTML +
+    transcriptHTML +
     '</body></html>';
 
   // window.open is blocked in extensions — use blob URL instead

@@ -3,6 +3,7 @@ const statusEl = document.getElementById('status');
 const anthropicEl = document.getElementById('anthropicKey');
 const proxyUrlEl = document.getElementById('proxyUrl');
 const gladiaEl = document.getElementById('gladiaKey');
+const sourceLanguageEl = document.getElementById('sourceLanguage');
 const keyHint = document.getElementById('keyHint');
 const keysSection = document.getElementById('keysSection');
 const modeApiKeyBtn = document.getElementById('modeApiKey');
@@ -36,13 +37,18 @@ provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'connectionMode', 'aiProvider']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'sourceLanguage', 'connectionMode', 'aiProvider']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
+  if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
   if (data.connectionMode === 'proxy') switchMode('proxy');
   switchProvider(data.aiProvider || 'gemini');
   updateHint();
+});
+
+sourceLanguageEl.addEventListener('change', () => {
+  browser.storage.local.set({ sourceLanguage: sourceLanguageEl.value });
 });
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────
@@ -84,15 +90,19 @@ function updateHint() {
   const hasGladia = gladiaEl.value.trim();
 
   if (!hasClaude) {
-    keyHint.textContent = mode === 'proxy' ? 'Enter your proxy URL.' : 'Enter your Anthropic API key.';
+    keyHint.textContent = mode === 'proxy' ? 'Introduce la URL del proxy.' : 'Introduce tu API key de Anthropic.';
     keyHint.className = 'key-hint error';
     toggleBtn.disabled = !isActive;
-  } else if (!hasGladia) {
-    keyHint.textContent = 'Ready — will use local Whisper (tab audio, ~5s delay).';
+  } else if (hasGladia) {
+    keyHint.textContent = 'Listo — transcripción con Gladia (clave directa).';
+    keyHint.className = 'key-hint ok';
+    toggleBtn.disabled = false;
+  } else if (mode === 'proxy') {
+    keyHint.textContent = 'Listo — Gladia a través del proxy (clave en el servidor).';
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   } else {
-    keyHint.textContent = 'Ready — will use Gladia for transcription.';
+    keyHint.textContent = 'Listo — Whisper local (audio de pestaña, ~5s de retardo).';
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   }
@@ -139,7 +149,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, connectionMode: mode, aiProvider });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, sourceLanguage: sourceLanguageEl.value, connectionMode: mode, aiProvider });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });

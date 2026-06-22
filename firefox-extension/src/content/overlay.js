@@ -364,12 +364,26 @@ function removePanel() {
 }
 
 // ── Transcript ────────────────────────────────────────────────────────────────
-function addTranscriptText(text) {
+
+// Computer-clock timecode HH:MM:SS:FF (FF = frame, 24 fps) at the moment the
+// sentence was finalized — lets the user know the real-world time something was said.
+function getClockTimecode() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const ff = Math.floor(d.getMilliseconds() * 24 / 1000); // 0–23
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ':' + p(ff);
+}
+
+function addTranscriptLine(timecode, text) {
   if (!transcriptFeedEl) return;
-  const span = document.createElement('span');
-  span.textContent = text + ' ';
-  span.className = 'rtfc-transcript-word';
-  transcriptFeedEl.appendChild(span);
+  const line = document.createElement('div');
+  line.className = 'rtfc-transcript-line';
+  const tc = document.createElement('span');
+  tc.className = 'rtfc-tc';
+  tc.textContent = '[' + timecode + ']';
+  line.appendChild(tc);
+  line.appendChild(document.createTextNode(' ' + text));
+  transcriptFeedEl.appendChild(line);
   transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
 }
 
@@ -549,7 +563,7 @@ function getVideoTimestamp() {
 }
 
 function getClaimTimestamp(claim) {
-  if (!sentenceTimestamps.length) return lastTranscriptTimestamp || getVideoTimestamp();
+  if (!sentenceTimestamps.length) return lastTranscriptTimestamp || getClockTimecode();
   const claimWords = new Set(claim.toLowerCase().split(/\s+/).filter(w => w.length >= 4));
   let bestMatch = null, bestScore = 0;
   for (const entry of sentenceTimestamps) {
@@ -558,7 +572,7 @@ function getClaimTimestamp(claim) {
     const score = overlap / Math.max(claimWords.size, sentWords.length);
     if (score > bestScore) { bestScore = score; bestMatch = entry; }
   }
-  return bestScore >= 0.3 ? bestMatch.timestamp : (lastTranscriptTimestamp || getVideoTimestamp());
+  return bestScore >= 0.3 ? bestMatch.timestamp : (lastTranscriptTimestamp || getClockTimecode());
 }
 
 function addVerdict(result) {
@@ -652,14 +666,15 @@ browser.runtime.onMessage.addListener((msg) => {
       if (msg.interim) {
         updateInterim(msg.text);
       } else if (msg.isFinal) {
-        const ts = getVideoTimestamp();
+        const ts = getClockTimecode();
         lastTranscriptTimestamp = ts;
         sentenceTimestamps.push({ text: msg.text, timestamp: ts });
         if (sentenceTimestamps.length > MAX_TIMESTAMP_BUFFER) sentenceTimestamps.shift();
         clearInterim();
         // strip [Speaker N] prefix before displaying
         const displayText = msg.text.replace(/^\[.*?\]\s*/, '');
-        addTranscriptText(displayText);
+        addTranscriptLine(ts, displayText);
+        if (typeof logTranscript === 'function') logTranscript(ts, displayText);
         // track which speaker is active from label
         const labelMatch = msg.text.match(/^\[(.+?)\]/);
         if (labelMatch && speakers.includes(labelMatch[1])) {

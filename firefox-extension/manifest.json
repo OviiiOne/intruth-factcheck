@@ -32,13 +32,7 @@
 
   "content_scripts": [
     {
-      "matches": [
-        "https://www.youtube.com/*",
-        "https://www.twitch.tv/*",
-        "https://*.c-span.org/*",
-        "https://*.jubilee.com/*",
-        "https://www.jubileemedia.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": [
         "src/content/lexical-features.js",
         "src/content/session-export.js",

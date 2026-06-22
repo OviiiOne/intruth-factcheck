@@ -5,7 +5,7 @@
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 13px;
-  background: rgba(15, 15, 15, 0.82);
+  background: #141414;
   color: #e8e8e8;
   width: 280px;
 }
@@ -44,7 +44,7 @@ body {
 .status {
   font-size: 11px;
   font-weight: 500;
-  color: #666;
+  color: #9a9a9a;
   letter-spacing: 0.01em;
 }
 
@@ -64,7 +64,7 @@ body {
   flex: 1;
   background: transparent;
   border: none;
-  color: #555;
+  color: #9a9a9a;
   font-family: 'Inter', sans-serif;
   font-size: 10px;
   font-weight: 600;
@@ -82,7 +82,7 @@ body {
 
 .proxy-hint {
   font-size: 9px;
-  color: #444;
+  color: #8a8a8a;
   line-height: 1.4;
 }
 
@@ -98,7 +98,7 @@ body {
   flex: 1;
   background: transparent;
   border: none;
-  color: #555;
+  color: #9a9a9a;
   font-family: 'Inter', sans-serif;
   font-size: 10px;
   font-weight: 600;
@@ -140,7 +140,7 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #555;
+  color: #9a9a9a;
 }
 
 .key-input {
@@ -156,17 +156,27 @@ body {
   transition: border-color 0.15s;
 }
 
-.key-input::placeholder { color: #444; }
+.key-input::placeholder { color: #8a8a8a; }
 .key-input:focus { border-color: rgba(255,255,255,0.25); }
 
 .key-input.saved {
   border-color: rgba(74, 222, 128, 0.3);
-  color: #888;
+  color: #b0b0b0;
+}
+
+select.key-input {
+  appearance: none;
+  cursor: pointer;
+  color: #e8e8e8;
+}
+select.key-input option {
+  background: #1f1f1f;
+  color: #e8e8e8;
 }
 
 .key-hint {
   font-size: 10px;
-  color: #555;
+  color: #9a9a9a;
   min-height: 14px;
 }
 
@@ -199,13 +209,13 @@ body {
 
 .gladia-hint {
   font-size: 9px;
-  color: #444;
+  color: #8a8a8a;
   line-height: 1.4;
 }
 
 .optional {
   font-weight: 400;
-  color: #444;
+  color: #8a8a8a;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -214,7 +224,7 @@ body {
 
 .firefox-note {
   font-size: 9px;
-  color: #444;
+  color: #8a8a8a;
   line-height: 1.4;
   padding-top: 4px;
   border-top: 0.5px solid rgba(255,255,255,0.06);

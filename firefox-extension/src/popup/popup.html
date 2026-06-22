@@ -47,7 +47,29 @@
         <label class="key-label">Gladia API Key <span class="optional">(optional)</span></label>
         <input class="key-input" id="gladiaKey" type="password" placeholder="your gladia key..." autocomplete="off"/>
       </div>
-      <div class="gladia-hint">Free 10h/month at gladia.io — without key, uses local Whisper model (~75MB download, first time only).</div>
+      <div class="gladia-hint">Gratis 10h/mes en gladia.io. En modo <b>Proxy</b> puedes dejarlo vacío: la clave de Gladia va en el servidor. Sin clave ni proxy usa Whisper local (~150MB, 1ª vez). Para idiomas no europeos (árabe, hebreo, persa…) se recomienda Gladia.</div>
+
+      <div class="key-field">
+        <label class="key-label">Idioma de la rueda de prensa</label>
+        <select class="key-input" id="sourceLanguage">
+          <option value="auto">Detección automática</option>
+          <option value="es">Español</option>
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+          <option value="de">Deutsch</option>
+          <option value="it">Italiano</option>
+          <option value="pt">Português</option>
+          <option value="ru">Русский</option>
+          <option value="uk">Українська</option>
+          <option value="tr">Türkçe</option>
+          <option value="ar">العربية</option>
+          <option value="he">עברית</option>
+          <option value="fa">فارسی</option>
+          <option value="zh">中文</option>
+          <option value="ja">日本語</option>
+        </select>
+      </div>
+      <div class="gladia-hint">Inglés y español: solo transcripción. Otros idiomas: se traducirán al español.</div>
 
       <div class="key-hint" id="keyHint"></div>
     </div>
