@@ -4,13 +4,15 @@
 
 let ANTHROPIC_KEY = '';
 let PROXY_URL = '';
+let PROXY_TOKEN = '';
 let AI_PROVIDER = 'claude';
 const SERPER_KEY = '';
 
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'aiProvider']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
+  PROXY_TOKEN = data.proxyToken || '';
   AI_PROVIDER = data.aiProvider || 'claude';
 }
 
@@ -85,9 +87,11 @@ async function callClaude(userMessage, systemPrompt) {
   let res;
 
   if (PROXY_URL) {
+    const proxyHeaders = { 'Content-Type': 'application/json' };
+    if (PROXY_TOKEN) proxyHeaders['x-proxy-token'] = PROXY_TOKEN;
     res = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: proxyHeaders,
       body: JSON.stringify({
         provider: AI_PROVIDER,
         model: AI_PROVIDER === 'gemini' ? 'gemini-2.0-flash' : 'claude-haiku-4-5-20251001',

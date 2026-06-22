@@ -2,6 +2,7 @@ const toggleBtn = document.getElementById('toggleBtn');
 const statusEl = document.getElementById('status');
 const anthropicEl = document.getElementById('anthropicKey');
 const proxyUrlEl = document.getElementById('proxyUrl');
+const proxyTokenEl = document.getElementById('proxyToken');
 const gladiaEl = document.getElementById('gladiaKey');
 const sourceLanguageEl = document.getElementById('sourceLanguage');
 const keyHint = document.getElementById('keyHint');
@@ -37,9 +38,10 @@ provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'sourceLanguage', 'connectionMode', 'aiProvider']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'connectionMode', 'aiProvider']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
+  if (data.proxyToken) { proxyTokenEl.value = data.proxyToken; proxyTokenEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
   if (data.connectionMode === 'proxy') switchMode('proxy');
@@ -75,7 +77,7 @@ modeProxyBtn.addEventListener('click', () => switchMode('proxy'));
 
 // ── Save keys on change ───────────────────────────────────────────────────────
 
-[anthropicEl, proxyUrlEl, gladiaEl].forEach(el => {
+[anthropicEl, proxyUrlEl, proxyTokenEl, gladiaEl].forEach(el => {
   el.addEventListener('input', () => { el.classList.remove('saved'); updateHint(); });
   el.addEventListener('change', () => {
     const key = el.id;
@@ -135,6 +137,7 @@ toggleBtn.addEventListener('click', async () => {
 
   const anthropicKey = anthropicEl.value.trim();
   const proxyUrl = proxyUrlEl.value.trim();
+  const proxyToken = proxyTokenEl.value.trim();
   const gladiaKey = gladiaEl.value.trim();
 
   if (mode === 'apikey' && !anthropicKey) {
@@ -149,7 +152,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, sourceLanguage: sourceLanguageEl.value, connectionMode: mode, aiProvider });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, connectionMode: mode, aiProvider });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });

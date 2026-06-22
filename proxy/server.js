@@ -5,6 +5,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 const GLADIA_KEY = process.env.GLADIA_API_KEY || '';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+const PROXY_TOKEN = process.env.PROXY_TOKEN || '';
 const PORT = process.env.PORT || 3000;
 
 if (!ANTHROPIC_KEY && !GEMINI_KEY) {
@@ -12,13 +13,27 @@ if (!ANTHROPIC_KEY && !GEMINI_KEY) {
   process.exit(1);
 }
 
+if (!PROXY_TOKEN) {
+  console.warn('WARNING: PROXY_TOKEN not set — the proxy is OPEN to anyone with the URL. Set PROXY_TOKEN to require a secret.');
+}
+
 app.use(express.json({ limit: '1mb' }));
 
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, x-proxy-token');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// Shared-secret gate: a public URL alone can't use the proxy without the token.
+// (CORS does not stop direct calls — this does.) /health stays open for checks.
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (PROXY_TOKEN && req.get('x-proxy-token') !== PROXY_TOKEN) {
+    return res.status(401).json({ error: { message: 'Unauthorized — missing or invalid proxy token' } });
+  }
   next();
 });
 

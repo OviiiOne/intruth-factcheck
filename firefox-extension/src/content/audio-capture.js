@@ -10,6 +10,7 @@ let captureActive = false;
 let utteranceBuffer = '';
 let gladiaKey = '';
 let gladiaProxyUrl = ''; // set when Gladia should be started via the proxy (key server-side)
+let proxyToken = '';     // shared secret sent to the proxy
 let sourceLanguage = 'auto'; // 'auto' | ISO code (es, en, fr, ar, he, fa, ...)
 let transcriptionMode = 'none'; // 'gladia' | 'whisper'
 
@@ -30,9 +31,10 @@ const WHISPER_SAMPLE_RATE = 16000;
 async function startAudioCapture() {
   if (captureActive) return;
 
-  const data = await browser.storage.local.get(['gladiaKey', 'sourceLanguage', 'proxyUrl', 'connectionMode']);
+  const data = await browser.storage.local.get(['gladiaKey', 'sourceLanguage', 'proxyUrl', 'connectionMode', 'proxyToken']);
   gladiaKey = data.gladiaKey || '';
   sourceLanguage = data.sourceLanguage || 'auto';
+  proxyToken = data.proxyToken || '';
 
   // In proxy mode without a direct key, start Gladia through the proxy so the
   // Gladia key stays on the server (Railway), never in the browser.
@@ -87,6 +89,7 @@ async function connectGladia() {
     const initHeaders = gladiaKey
       ? { 'Content-Type': 'application/json', 'x-gladia-key': gladiaKey }
       : { 'Content-Type': 'application/json' };
+    if (!gladiaKey && proxyToken) initHeaders['x-proxy-token'] = proxyToken;
 
     const initRes = await fetch(initUrl, {
       method: 'POST',
