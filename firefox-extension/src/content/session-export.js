@@ -25,8 +25,8 @@ function logVerdict(result) {
 }
 
 // Full session transcript, each line tagged with its clock timecode HH:MM:SS:FF.
-function logTranscript(timecode, text) {
-  transcriptLog.push({ timecode, text });
+function logTranscript(timecode, text, translation) {
+  transcriptLog.push({ timecode, text, translation: translation || '' });
 }
 
 // Neutral key points extracted live (no verdict).
@@ -150,12 +150,15 @@ function exportPDF() {
   const transcriptHTML = transcriptLog.length
     ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
       '<div class="transcript">' +
-        transcriptLog.map(t =>
-          '<div class="transcript-line">' +
+        transcriptLog.map(t => {
+          const tr = (t.translation && t.translation.trim() && t.translation.trim() !== (t.text || '').trim())
+            ? '<div class="transcript-tr">↳ ' + escapeHtml(t.translation) + '</div>'
+            : '';
+          return '<div class="transcript-line">' +
             '<span class="transcript-tc">[' + escapeHtml(t.timecode) + ']</span> ' +
-            escapeHtml(t.text) +
-          '</div>'
-        ).join('') +
+            escapeHtml(t.text) + tr +
+          '</div>';
+        }).join('') +
       '</div>'
     : '';
 
@@ -204,6 +207,7 @@ function exportPDF() {
     '.transcript { border: 1px solid #e5e5e5; border-radius: 8px; padding: 12px 16px; margin-top: 8px; }' +
     '.transcript-line { font-size: 12px; color: #333; line-height: 1.6; margin-bottom: 2px; }' +
     '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
+    '.transcript-tr { margin-left: 16px; color: #1d4ed8; font-size: 12px; line-height: 1.5; }' +
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +

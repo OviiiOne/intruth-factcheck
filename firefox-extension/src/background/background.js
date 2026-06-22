@@ -6,14 +6,16 @@ let ANTHROPIC_KEY = '';
 let PROXY_URL = '';
 let PROXY_TOKEN = '';
 let AI_PROVIDER = 'claude';
+let SOURCE_LANGUAGE = 'auto';
 const SERPER_KEY = '';
 
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
   AI_PROVIDER = data.aiProvider || 'claude';
+  SOURCE_LANGUAGE = data.sourceLanguage || 'auto';
 }
 
 const EVALUATE_PROMPT = `You are a real-time fact-checker. Given a transcript excerpt, identify check-worthy factual claims and evaluate each one.
@@ -43,6 +45,8 @@ For each key point, return a JSON object with:
 - "speaker": who said it, using a real name when known; never "Speaker N"; null if unknown
 
 Return ONLY a JSON array of these objects. No markdown, no text outside the array. If nothing is noteworthy, return [].`;
+
+const TRANSLATE_PROMPT = `Translate the user's text into Spanish. If the text is already in Spanish or in English, return it EXACTLY as-is, unchanged. Output ONLY the resulting text — no quotes, no notes, no explanation.`;
 
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
@@ -511,6 +515,51 @@ function sendToTab(tabId, msg) {
   browser.tabs.sendMessage(tabId, msg).catch(() => {});
 }
 
+// ── Translation ────────────────────────────────────────────────────────────────
+
+// Spanish and English are left untranslated (user understands both). Any other
+// selected language — or 'auto' — gets translated to Spanish (the prompt passes
+// Spanish/English through unchanged, so 'auto' stays correct without detection).
+function needsTranslation() {
+  return SOURCE_LANGUAGE !== 'es' && SOURCE_LANGUAGE !== 'en';
+}
+
+async function translateToSpanish(text) {
+  if (!text || !text.trim()) return '';
+  try {
+    const out = await callClaude(text, TRANSLATE_PROMPT);
+    return (out || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+// Computer-clock timecode HH:MM:SS:FF (FF = frame, 24 fps), captured when the
+// sentence is finalized — before any translation latency.
+function getClockTimecode() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const ff = Math.floor(d.getMilliseconds() * 24 / 1000);
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ':' + p(ff);
+}
+
+async function relayTranscript(msg) {
+  if (!activeTabId) return;
+  const timecode = msg.isFinal ? getClockTimecode() : '';
+  let translation = '';
+  if (msg.isFinal && needsTranslation()) {
+    translation = await translateToSpanish(msg.text);
+  }
+  sendToTab(activeTabId, {
+    type: 'TRANSCRIPT_RESULT',
+    text: msg.text,
+    isFinal: msg.isFinal,
+    interim: msg.interim,
+    timecode,
+    translation,
+  });
+}
+
 // ── Messages ──────────────────────────────────────────────────────────────────
 
 browser.runtime.onMessage.addListener((msg, sender) => {
@@ -537,11 +586,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
         }
         onNewSentence(msg.text, currentSpeakerId);
       }
-      if (activeTabId) {
-        sendToTab(activeTabId, {
-          type: 'TRANSCRIPT_RESULT', text: msg.text, isFinal: msg.isFinal, interim: msg.interim,
-        });
-      }
+      relayTranscript(msg);
       return Promise.resolve();
 
     case 'SPEAKER_NAMES':

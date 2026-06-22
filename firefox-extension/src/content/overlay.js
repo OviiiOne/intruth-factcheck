@@ -368,7 +368,7 @@ function getClockTimecode() {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ':' + p(ff);
 }
 
-function addTranscriptLine(timecode, text) {
+function addTranscriptLine(timecode, text, translation) {
   if (!transcriptFeedEl) return;
   const line = document.createElement('div');
   line.className = 'rtfc-transcript-line';
@@ -377,6 +377,12 @@ function addTranscriptLine(timecode, text) {
   tc.textContent = '[' + timecode + ']';
   line.appendChild(tc);
   line.appendChild(document.createTextNode(' ' + text));
+  if (translation && translation.trim() && translation.trim() !== text.trim()) {
+    const tr = document.createElement('div');
+    tr.className = 'rtfc-tr';
+    tr.textContent = '↳ ' + translation;
+    line.appendChild(tr);
+  }
   transcriptFeedEl.appendChild(line);
   transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
 }
@@ -716,15 +722,16 @@ browser.runtime.onMessage.addListener((msg) => {
       if (msg.interim) {
         updateInterim(msg.text);
       } else if (msg.isFinal) {
-        const ts = getClockTimecode();
+        const ts = msg.timecode || getClockTimecode();
         lastTranscriptTimestamp = ts;
         sentenceTimestamps.push({ text: msg.text, timestamp: ts });
         if (sentenceTimestamps.length > MAX_TIMESTAMP_BUFFER) sentenceTimestamps.shift();
         clearInterim();
         // strip [Speaker N] prefix before displaying
         const displayText = msg.text.replace(/^\[.*?\]\s*/, '');
-        addTranscriptLine(ts, displayText);
-        if (typeof logTranscript === 'function') logTranscript(ts, displayText);
+        const translation = msg.translation || '';
+        addTranscriptLine(ts, displayText, translation);
+        if (typeof logTranscript === 'function') logTranscript(ts, displayText, translation);
         // track which speaker is active from label
         const labelMatch = msg.text.match(/^\[(.+?)\]/);
         if (labelMatch && speakers.includes(labelMatch[1])) {
