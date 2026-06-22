@@ -33,7 +33,14 @@
           <label class="key-label">Proxy URL</label>
           <input class="key-input" id="proxyUrl" type="url" placeholder="https://your-proxy.example.com/api" autocomplete="off"/>
         </div>
-        <div class="proxy-hint">The proxy forwards requests to Claude without exposing your API key in the browser.</div>
+        <div class="key-field">
+          <label class="key-label">AI Model</label>
+          <div class="provider-toggle">
+            <button class="provider-btn" id="provGemini">Gemini Flash <span class="free-tag">free</span></button>
+            <button class="provider-btn" id="provClaude">Claude Haiku</button>
+          </div>
+        </div>
+        <div class="proxy-hint">Gemini Flash: gratis (1.5M tokens/día). Claude Haiku: más preciso, con coste mínimo.</div>
       </div>
 
       <div class="key-field">

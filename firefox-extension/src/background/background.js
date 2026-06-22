@@ -4,12 +4,14 @@
 
 let ANTHROPIC_KEY = '';
 let PROXY_URL = '';
+let AI_PROVIDER = 'claude';
 const SERPER_KEY = '';
 
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'aiProvider']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
+  AI_PROVIDER = data.aiProvider || 'claude';
 }
 
 const EVALUATE_PROMPT = `You are a real-time fact-checker. Given a transcript excerpt, identify check-worthy factual claims and evaluate each one.
@@ -87,7 +89,8 @@ async function callClaude(userMessage, systemPrompt) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        provider: AI_PROVIDER,
+        model: AI_PROVIDER === 'gemini' ? 'gemini-2.0-flash' : 'claude-haiku-4-5-20251001',
         max_tokens: 768,
         temperature: 0,
         system: systemPrompt,

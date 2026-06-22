@@ -9,17 +9,39 @@ const modeApiKeyBtn = document.getElementById('modeApiKey');
 const modeProxyBtn = document.getElementById('modeProxy');
 const apiKeyFields = document.getElementById('apiKeyFields');
 const proxyFields = document.getElementById('proxyFields');
+const provGeminiBtn = document.getElementById('provGemini');
+const provClaudeBtn = document.getElementById('provClaude');
 
 let isActive = false;
 let mode = 'apikey';
+let aiProvider = 'gemini';
+
+// ── Provider toggle ──────────────────────────────────────────────────────────
+
+function switchProvider(prov) {
+  aiProvider = prov;
+  if (prov === 'gemini') {
+    provGeminiBtn.classList.add('active');
+    provClaudeBtn.classList.remove('active');
+  } else {
+    provClaudeBtn.classList.add('active');
+    provGeminiBtn.classList.remove('active');
+  }
+  browser.storage.local.set({ aiProvider: prov });
+  updateHint();
+}
+
+provGeminiBtn.addEventListener('click', () => switchProvider('gemini'));
+provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'connectionMode']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'gladiaKey', 'connectionMode', 'aiProvider']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.connectionMode === 'proxy') switchMode('proxy');
+  switchProvider(data.aiProvider || 'gemini');
   updateHint();
 });
 
@@ -117,7 +139,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, connectionMode: mode });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, gladiaKey, connectionMode: mode, aiProvider });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });
