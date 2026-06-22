@@ -40,7 +40,7 @@
         <label class="key-label">Gladia API Key <span class="optional">(optional)</span></label>
         <input class="key-input" id="gladiaKey" type="password" placeholder="your gladia key..." autocomplete="off"/>
       </div>
-      <div class="gladia-hint">Free 10h/month at gladia.io — without key, uses microphone via Web Speech API (no speaker detection).</div>
+      <div class="gladia-hint">Free 10h/month at gladia.io — without key, uses local Whisper model (~75MB download, first time only).</div>
 
       <div class="key-hint" id="keyHint"></div>
     </div>
@@ -48,8 +48,8 @@
     <button class="toggle-btn" id="toggleBtn">Start Fact-Checking</button>
 
     <div class="firefox-note">
-      With Gladia: share a tab with "Share audio" enabled.<br/>
-      Without Gladia: uses your microphone directly.
+      Both modes capture tab audio — share a tab with "Share audio" enabled.<br/>
+      Gladia: real-time + speaker detection. Without: local Whisper (~5s delay).
     </div>
   </div>
   <script src="popup.js"></script>

@@ -1,6 +1,7 @@
-// audio-capture.js — Gladia (primary) + Web Speech API (fallback)
-// Firefox: uses getDisplayMedia for audio capture (user shares tab with audio)
-// If no Gladia key → falls back to Web Speech API (free, no key needed)
+// audio-capture.js — Gladia (primary) + Whisper local (fallback)
+// Firefox: uses getDisplayMedia for tab audio capture in both modes
+// Gladia: real-time via WebSocket, best quality + diarization
+// Whisper: local model via transformers.js, no API key needed, ~75MB download once
 
 let mediaStream = null;
 let audioContext = null;
@@ -8,8 +9,16 @@ let socket = null;
 let captureActive = false;
 let utteranceBuffer = '';
 let gladiaKey = '';
-let transcriptionMode = 'none'; // 'gladia' | 'webspeech'
-let speechRecognition = null;
+let transcriptionMode = 'none'; // 'gladia' | 'whisper'
+
+// Whisper state
+let whisperPipeline = null;
+let whisperChunks = [];
+let whisperProcessor = null;
+let whisperInterval = null;
+let whisperLoading = false;
+const WHISPER_CHUNK_SECONDS = 5;
+const WHISPER_SAMPLE_RATE = 16000;
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
@@ -19,16 +28,7 @@ async function startAudioCapture() {
   const data = await browser.storage.local.get(['gladiaKey']);
   gladiaKey = data.gladiaKey || '';
 
-  if (gladiaKey) {
-    await startWithGladia();
-  } else {
-    startWithWebSpeech();
-  }
-}
-
-// ── Gladia (primary) ─────────────────────────────────────────────────────────
-
-async function startWithGladia() {
+  // Always need tab audio — request getDisplayMedia first
   try {
     mediaStream = await navigator.mediaDevices.getDisplayMedia({
       video: true,
@@ -44,24 +44,30 @@ async function startWithGladia() {
 
     mediaStream.getVideoTracks().forEach(t => t.stop());
     captureActive = true;
-    transcriptionMode = 'gladia';
-    utteranceBuffer = '';
-    connectGladia();
+
+    if (gladiaKey) {
+      transcriptionMode = 'gladia';
+      utteranceBuffer = '';
+      connectGladia();
+    } else {
+      transcriptionMode = 'whisper';
+      startWithWhisper();
+    }
 
   } catch (err) {
     console.error('[audio-capture] getDisplayMedia error:', err);
     if (err.name === 'NotAllowedError') {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Audio sharing denied. Falling back to Web Speech API (microphone)...' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Tab sharing denied. Cannot capture audio without sharing a tab.' });
     } else {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Audio capture failed. Falling back to Web Speech API...' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Audio capture failed: ' + err.message });
     }
-    startWithWebSpeech();
   }
 }
 
+// ── Gladia (primary) ─────────────────────────────────────────────────────────
+
 async function connectGladia() {
   try {
-    // Step 1: Create a live session via POST
     const initRes = await fetch('https://api.gladia.io/v2/live', {
       method: 'POST',
       headers: {
@@ -83,10 +89,9 @@ async function connectGladia() {
     });
 
     if (!initRes.ok) {
-      const errText = await initRes.text();
-      console.error('[gladia] init failed:', initRes.status, errText);
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia init failed (' + initRes.status + '). Falling back to Web Speech API...' });
-      fallbackToWebSpeech();
+      console.error('[gladia] init failed:', initRes.status);
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia init failed (' + initRes.status + '). Switching to local Whisper...' });
+      fallbackToWhisper();
       return;
     }
 
@@ -94,17 +99,16 @@ async function connectGladia() {
     const wsUrl = initData.url;
 
     if (!wsUrl) {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia did not return WebSocket URL. Falling back...' });
-      fallbackToWebSpeech();
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia error. Switching to local Whisper...' });
+      fallbackToWhisper();
       return;
     }
 
-    // Step 2: Connect WebSocket
     socket = new WebSocket(wsUrl);
 
     socket.onopen = () => {
       console.log('[audio-capture] gladia connected');
-      startAudioPipeline();
+      startGladiaPipeline();
     };
 
     socket.onmessage = (event) => {
@@ -118,41 +122,30 @@ async function connectGladia() {
           const isFinal = msg.data?.is_final === true;
           const speaker = msg.data?.utterance?.words?.[0]?.speaker ?? null;
 
-          if (isFinal) {
-            browser.runtime.sendMessage({
-              type: 'TRANSCRIPT_RESULT',
-              text,
-              isFinal: true,
-              interim: false,
-              speaker,
-            });
-          } else {
-            browser.runtime.sendMessage({
-              type: 'TRANSCRIPT_RESULT',
-              text,
-              isFinal: false,
-              interim: true,
-              speaker,
-            });
-          }
+          browser.runtime.sendMessage({
+            type: 'TRANSCRIPT_RESULT',
+            text,
+            isFinal,
+            interim: !isFinal,
+            speaker,
+          });
         }
       } catch (err) {
         console.error('[gladia] message parse error:', err);
       }
     };
 
-    socket.onerror = (err) => {
-      console.error('[gladia] WebSocket error:', err);
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia connection error. Falling back to Web Speech API...' });
-      fallbackToWebSpeech();
+    socket.onerror = () => {
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia error. Switching to local Whisper...' });
+      fallbackToWhisper();
     };
 
     socket.onclose = (e) => {
       console.log('[gladia] closed:', e.code, e.reason);
       if (captureActive && transcriptionMode === 'gladia') {
         if (e.code === 1008 || e.code === 4001 || e.code === 4003) {
-          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia auth failed. Check your API key. Falling back...' });
-          fallbackToWebSpeech();
+          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia auth failed. Switching to local Whisper...' });
+          fallbackToWhisper();
         } else {
           browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia disconnected — reconnecting...' });
           setTimeout(() => {
@@ -164,15 +157,15 @@ async function connectGladia() {
 
   } catch (err) {
     console.error('[gladia] connection error:', err);
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia connection failed: ' + err.message + '. Falling back...' });
-    fallbackToWebSpeech();
+    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia failed: ' + err.message + '. Switching to local Whisper...' });
+    fallbackToWhisper();
   }
 }
 
-function startAudioPipeline() {
+function startGladiaPipeline() {
   if (!mediaStream) return;
 
-  audioContext = new AudioContext({ sampleRate: 16000 });
+  audioContext = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
   const source = audioContext.createMediaStreamSource(mediaStream);
 
   const processor = audioContext.createScriptProcessor(4096, 1, 1);
@@ -185,7 +178,6 @@ function startAudioPipeline() {
       int16[i] = Math.max(-32768, Math.min(32767, float32[i] * 32768));
     }
 
-    // Gladia expects base64-encoded audio in JSON frames
     const base64 = arrayBufferToBase64(int16.buffer);
     socket.send(JSON.stringify({ frames: base64 }));
   };
@@ -203,80 +195,157 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-// ── Web Speech API (fallback) ────────────────────────────────────────────────
+// ── Whisper local (fallback) ─────────────────────────────────────────────────
 
-function fallbackToWebSpeech() {
-  // Clean up Gladia resources
+function fallbackToWhisper() {
   if (socket) { socket.close(); socket = null; }
   if (audioContext) { audioContext.close().catch(() => {}); audioContext = null; }
-  if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-
-  startWithWebSpeech();
+  // Keep mediaStream — we reuse it for Whisper
+  transcriptionMode = 'whisper';
+  startWithWhisper();
 }
 
-function startWithWebSpeech() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Web Speech API not supported in this browser.' });
+async function startWithWhisper() {
+  browser.runtime.sendMessage({
+    type: 'PIPELINE_ERROR',
+    message: 'Loading local Whisper model (~75MB, first time only)...',
+  });
+
+  try {
+    await loadWhisperModel();
+  } catch (err) {
+    console.error('[whisper] model load error:', err);
+    browser.runtime.sendMessage({
+      type: 'PIPELINE_ERROR',
+      message: 'Failed to load Whisper model: ' + err.message,
+    });
     return;
   }
 
-  captureActive = true;
-  transcriptionMode = 'webspeech';
+  browser.runtime.sendMessage({
+    type: 'PIPELINE_ERROR',
+    message: 'Whisper loaded — transcribing tab audio locally (no speaker detection).',
+  });
 
-  speechRecognition = new SpeechRecognition();
-  speechRecognition.continuous = true;
-  speechRecognition.interimResults = true;
-  speechRecognition.lang = 'en-US';
+  startWhisperPipeline();
+}
 
-  speechRecognition.onresult = (event) => {
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      const text = result[0].transcript.trim();
-      if (!text) continue;
-
-      if (result.isFinal) {
-        browser.runtime.sendMessage({
-          type: 'TRANSCRIPT_RESULT',
-          text,
-          isFinal: true,
-          interim: false,
-          speaker: null, // Web Speech API has no diarization
-        });
-      } else {
-        browser.runtime.sendMessage({
-          type: 'TRANSCRIPT_RESULT',
-          text,
-          isFinal: false,
-          interim: true,
-          speaker: null,
-        });
-      }
-    }
-  };
-
-  speechRecognition.onerror = (event) => {
-    console.error('[webspeech] error:', event.error);
-    if (event.error === 'not-allowed') {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Microphone access denied.' });
-    } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Speech recognition error: ' + event.error });
-    }
-  };
-
-  speechRecognition.onend = () => {
-    // Auto-restart if still active (Web Speech API stops after pauses)
-    if (captureActive && transcriptionMode === 'webspeech') {
-      try { speechRecognition.start(); } catch (e) {}
-    }
-  };
+async function loadWhisperModel() {
+  if (whisperPipeline) return;
+  if (whisperLoading) return;
+  whisperLoading = true;
 
   try {
-    speechRecognition.start();
-    console.log('[audio-capture] Web Speech API started (fallback mode)');
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Using microphone (Web Speech API) — no speaker detection available.' });
+    // Dynamic import from CDN
+    const { pipeline } = await import(
+      /* webpackIgnore: true */
+      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.4.1/dist/transformers.min.js'
+    );
+
+    whisperPipeline = await pipeline(
+      'automatic-speech-recognition',
+      'onnx-community/whisper-tiny.en',
+      {
+        dtype: 'q8',
+        device: 'wasm',
+      }
+    );
+
+    console.log('[whisper] model loaded');
+  } finally {
+    whisperLoading = false;
+  }
+}
+
+function startWhisperPipeline() {
+  if (!mediaStream) return;
+
+  audioContext = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
+  const source = audioContext.createMediaStreamSource(mediaStream);
+
+  whisperChunks = [];
+  whisperProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+  whisperProcessor.onaudioprocess = (e) => {
+    if (!captureActive || transcriptionMode !== 'whisper') return;
+    const samples = new Float32Array(e.inputBuffer.getChannelData(0));
+    whisperChunks.push(samples);
+  };
+
+  source.connect(whisperProcessor);
+  whisperProcessor.connect(audioContext.destination);
+
+  // Process accumulated audio every WHISPER_CHUNK_SECONDS
+  whisperInterval = setInterval(() => {
+    if (!captureActive || transcriptionMode !== 'whisper') return;
+    processWhisperChunks();
+  }, WHISPER_CHUNK_SECONDS * 1000);
+
+  console.log('[whisper] audio pipeline started, chunking every', WHISPER_CHUNK_SECONDS, 's');
+}
+
+let whisperProcessing = false;
+
+async function processWhisperChunks() {
+  if (!whisperPipeline || whisperProcessing) return;
+  if (!whisperChunks.length) return;
+
+  // Grab current chunks and reset buffer
+  const chunks = whisperChunks;
+  whisperChunks = [];
+
+  // Merge into single Float32Array
+  const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+  if (totalLength < WHISPER_SAMPLE_RATE * 0.5) return; // skip if less than 0.5s
+
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  // Check if audio has actual content (not silence)
+  let maxAmp = 0;
+  for (let i = 0; i < merged.length; i += 100) {
+    const abs = Math.abs(merged[i]);
+    if (abs > maxAmp) maxAmp = abs;
+  }
+  if (maxAmp < 0.01) return; // skip silence
+
+  whisperProcessing = true;
+
+  try {
+    // Send interim to show we're processing
+    browser.runtime.sendMessage({
+      type: 'TRANSCRIPT_RESULT',
+      text: '...',
+      isFinal: false,
+      interim: true,
+      speaker: null,
+    });
+
+    const result = await whisperPipeline(merged, {
+      language: 'en',
+      task: 'transcribe',
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
+
+    const text = (result?.text || '').trim();
+    if (text && text !== '...' && text.length > 1) {
+      browser.runtime.sendMessage({
+        type: 'TRANSCRIPT_RESULT',
+        text,
+        isFinal: true,
+        interim: false,
+        speaker: null,
+      });
+    }
   } catch (err) {
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Failed to start speech recognition: ' + err.message });
+    console.error('[whisper] transcription error:', err);
+  } finally {
+    whisperProcessing = false;
   }
 }
 
@@ -287,14 +356,20 @@ function stopAudioCapture() {
   utteranceBuffer = '';
   transcriptionMode = 'none';
 
-  if (speechRecognition) {
-    try { speechRecognition.stop(); } catch (e) {}
-    speechRecognition = null;
+  if (whisperInterval) {
+    clearInterval(whisperInterval);
+    whisperInterval = null;
   }
+  whisperChunks = [];
 
   if (socket) {
     socket.close();
     socket = null;
+  }
+
+  if (whisperProcessor) {
+    whisperProcessor.disconnect();
+    whisperProcessor = null;
   }
 
   if (mediaStream) {

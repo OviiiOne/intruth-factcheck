@@ -66,7 +66,7 @@ function updateHint() {
     keyHint.className = 'key-hint error';
     toggleBtn.disabled = !isActive;
   } else if (!hasGladia) {
-    keyHint.textContent = 'Ready — will use microphone (Web Speech API).';
+    keyHint.textContent = 'Ready — will use local Whisper (tab audio, ~5s delay).';
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   } else {
