@@ -111,7 +111,7 @@ async function handleGemini(body) {
 }
 
 async function handleGroq(body) {
-  const { max_tokens, temperature, system, messages, grounded } = body;
+  const { max_tokens, temperature, system, messages, grounded, json } = body;
   // 'compound-beta' has built-in web search (free tier); use it only when grounding
   // is requested (verification). Otherwise a fast normal model for the frequent calls.
   const model = grounded ? 'compound-beta' : 'llama-3.3-70b-versatile';
@@ -122,15 +122,19 @@ async function handleGroq(body) {
     groqMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
   }
 
+  const groqBody = {
+    model,
+    messages: groqMessages,
+    temperature: temperature ?? 0,
+    max_tokens: Math.min(max_tokens || 768, 4096),
+  };
+  // Force valid JSON for structured calls (key points). Not with compound (search).
+  if (json && !grounded) groqBody.response_format = { type: 'json_object' };
+
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-    body: JSON.stringify({
-      model,
-      messages: groqMessages,
-      temperature: temperature ?? 0,
-      max_tokens: Math.min(max_tokens || 768, 4096),
-    }),
+    body: JSON.stringify(groqBody),
   });
 
   const raw = await response.json();

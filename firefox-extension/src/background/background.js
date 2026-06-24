@@ -38,13 +38,13 @@ Capture the SUBSTANCE of any significant statement EVEN IF it sounds like a repe
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 
-For each key point, return a JSON object with:
+Return ONLY a JSON object of the form {"points": [ ... ]} (no markdown, no text outside the JSON). Each element of "points" has:
 - "point": a concise, neutral one-sentence summary, written in SPANISH
 - "category": a short UPPERCASE label. Prefer one of: ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA. If none fits well, invent a concise label in Spanish (one or two words, e.g. GEOPOLITICA, SEGURIDAD, ECONOMIA, JUSTICIA). Use OTRO only as a last resort.
 - "quote": the most relevant short verbatim fragment from the transcript, in its ORIGINAL language (or "" if none)
 - "speaker": who said it, using a real name when known; never "Speaker N"; null if unknown
 
-Return ONLY a JSON array of these objects. No markdown, no text outside the array. If nothing is noteworthy, return [].`;
+If nothing is noteworthy, return {"points": []}.`;
 
 const TRANSLATE_PROMPT = `Translate the user's text into Spanish. If the text is already in Spanish or in English, return it EXACTLY as-is, unchanged. Output ONLY the resulting text — no quotes, no notes, no explanation.`;
 
@@ -119,7 +119,7 @@ async function searchWeb(query, retries = 2) {
 
 // ── Claude (direct or proxy) ─────────────────────────────────────────────────
 
-async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768) {
+async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768, json = false) {
   let res;
 
   if (PROXY_URL) {
@@ -134,6 +134,7 @@ async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens
         max_tokens: maxTokens,
         temperature: 0,
         grounded,
+        json,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       }),
@@ -510,9 +511,11 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 
     const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyNoted}`,
-      KEYPOINTS_PROMPT
+      KEYPOINTS_PROMPT,
+      false, 768, true
     )).text;
-    const results = parseArray(raw);
+    const obj = parseObject(raw);
+    const results = (obj && Array.isArray(obj.points)) ? obj.points : parseArray(raw);
     const valid = results.filter(r => r.point && !isDuplicate(r.point));
     if (!valid.length) return;
 
@@ -608,8 +611,7 @@ async function translateToSpanish(text) {
 function getClockTimecode() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  const ff = Math.floor(d.getMilliseconds() * 24 / 1000);
-  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ':' + p(ff);
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
 async function relayTranscript(msg) {

@@ -400,8 +400,7 @@ function removePanel() {
 function getClockTimecode() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  const ff = Math.floor(d.getMilliseconds() * 24 / 1000); // 0–23
-  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + ':' + p(ff);
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
 function addTranscriptLine(timecode, text, translation) {
