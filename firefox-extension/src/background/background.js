@@ -621,6 +621,12 @@ async function relayTranscript(msg) {
   if (msg.isFinal && needsTranslation()) {
     translation = await translateToSpanish(msg.text);
   }
+  // Resolve a speaker label for the transcript (Gladia diarization). The overlay
+  // shows it at the start and whenever the speaker changes.
+  let speaker = null;
+  if (msg.isFinal && msg.speaker !== null && msg.speaker !== undefined) {
+    speaker = speakerIdToName[msg.speaker] || ('Orador ' + (Number(msg.speaker) + 1));
+  }
   sendToTab(activeTabId, {
     type: 'TRANSCRIPT_RESULT',
     text: msg.text,
@@ -628,6 +634,7 @@ async function relayTranscript(msg) {
     interim: msg.interim,
     timecode,
     translation,
+    speaker,
   });
 }
 

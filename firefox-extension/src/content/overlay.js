@@ -386,6 +386,7 @@ function removePanel() {
   kpCards.clear();
   kpCounter = 0;
   currentDotState = '';
+  lastTranscriptSpeaker = null;
   speakers = [];
   speakerColorMap.clear();
   sentenceTimestamps.length = 0;
@@ -405,8 +406,18 @@ function getClockTimecode() {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
-function addTranscriptLine(timecode, text, translation) {
+let lastTranscriptSpeaker = null;
+
+function addTranscriptLine(timecode, text, translation, speaker) {
   if (!transcriptFeedEl) return;
+  // Show the speaker name at the start and whenever it changes.
+  if (speaker && speaker !== lastTranscriptSpeaker) {
+    lastTranscriptSpeaker = speaker;
+    const sp = document.createElement('div');
+    sp.className = 'rtfc-tr-speaker';
+    sp.textContent = speaker;
+    transcriptFeedEl.appendChild(sp);
+  }
   const line = document.createElement('div');
   line.className = 'rtfc-transcript-line';
   const tc = document.createElement('span');
@@ -862,7 +873,7 @@ browser.runtime.onMessage.addListener((msg) => {
         // strip [Speaker N] prefix before displaying
         const displayText = msg.text.replace(/^\[.*?\]\s*/, '');
         const translation = msg.translation || '';
-        addTranscriptLine(ts, displayText, translation);
+        addTranscriptLine(ts, displayText, translation, msg.speaker || null);
         if (typeof logTranscript === 'function') logTranscript(ts, displayText, translation);
         // track which speaker is active from label
         const labelMatch = msg.text.match(/^\[(.+?)\]/);
