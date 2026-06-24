@@ -45,21 +45,27 @@
   gap: 7px;
 }
 
-/* Header flashes ~5 times in the new status colour so the change is noticeable. */
+/* Header fills with the status colour ~5 times so the change is noticeable.
+   Moderate opacity over the dark header keeps the text legible. */
 @keyframes rtfc-hflash-amber {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgba(251,191,36,0); }
-  50%      { box-shadow: inset 0 0 14px 0 rgba(251,191,36,0.7); }
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(251,191,36,0.55); }
+}
+@keyframes rtfc-hflash-blue {
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(56,189,248,0.5); }
 }
 @keyframes rtfc-hflash-green {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgba(74,222,128,0); }
-  50%      { box-shadow: inset 0 0 14px 0 rgba(74,222,128,0.7); }
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(74,222,128,0.5); }
 }
 @keyframes rtfc-hflash-red {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgba(248,113,113,0); }
-  50%      { box-shadow: inset 0 0 14px 0 rgba(248,113,113,0.75); }
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(248,113,113,0.5); }
 }
 
 .rtfc-header-flash--connecting { animation: rtfc-hflash-amber 0.42s ease-in-out 5; }
+.rtfc-header-flash--ready      { animation: rtfc-hflash-blue  0.42s ease-in-out 5; }
 .rtfc-header-flash--live       { animation: rtfc-hflash-green 0.42s ease-in-out 5; }
 .rtfc-header-flash--error      { animation: rtfc-hflash-red   0.42s ease-in-out 5; }
 
@@ -72,6 +78,7 @@
   flex-shrink: 0;
 }
 
+.rtfc-dot--ready { background: #38bdf8; }                  /* connected, waiting for speech */
 .rtfc-dot--live  { background: #4ade80; }                  /* audio is flowing */
 .rtfc-dot--error { background: #f87171; animation: none; } /* something failed */
 

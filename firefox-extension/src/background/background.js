@@ -34,7 +34,7 @@ Return ONLY a JSON array. No markdown, no explanation outside the array.`;
 
 const KEYPOINTS_PROMPT = `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
 
-Capture the SUBSTANCE of any significant statement EVEN IF it sounds like a repeated talking point or campaign rhetoric. For example "Iran will not have a nuclear weapon" is a key point. Only skip pure greetings, filler, and contentless pleasantries.
+Be SELECTIVE — extract only what a journalist would jot down: real announcements, figures, commitments, named decisions, and significant claims (including geopolitical ones like "Iran will not have a nuclear weapon", even if repeated). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. Most excerpts have only 0–1 key points; rarely more. Quality over quantity — do NOT turn every sentence into a key point.
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 
@@ -512,7 +512,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyNoted}`,
       KEYPOINTS_PROMPT,
-      false, 768, true
+      false, 1536, true
     )).text;
     const obj = parseObject(raw);
     const results = (obj && Array.isArray(obj.points)) ? obj.points : parseArray(raw);
@@ -683,6 +683,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
 
     case 'PIPELINE_INFO':
       if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_INFO', message: msg.message });
+      return Promise.resolve();
+
+    case 'CAPTURE_READY':
+      if (activeTabId) sendToTab(activeTabId, { type: 'CAPTURE_READY' });
       return Promise.resolve();
 
     case 'VERIFY_KEYPOINT':

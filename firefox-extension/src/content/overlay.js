@@ -288,8 +288,9 @@ function setDotState(state) {
   if (!dot) return;
   if (state === currentDotState) return; // only react to a real change
   currentDotState = state;
-  dot.classList.remove('rtfc-dot--live', 'rtfc-dot--error');
-  if (state === 'live') dot.classList.add('rtfc-dot--live');
+  dot.classList.remove('rtfc-dot--ready', 'rtfc-dot--live', 'rtfc-dot--error');
+  if (state === 'ready') dot.classList.add('rtfc-dot--ready');
+  else if (state === 'live') dot.classList.add('rtfc-dot--live');
   else if (state === 'error') dot.classList.add('rtfc-dot--error');
   flashHeader(state);
 }
@@ -298,10 +299,11 @@ function setDotState(state) {
 function flashHeader(state) {
   const header = panel && panel.querySelector('#rtfc-header');
   if (!header) return;
-  const cls = state === 'live' ? 'rtfc-header-flash--live'
+  const cls = state === 'ready' ? 'rtfc-header-flash--ready'
+            : state === 'live' ? 'rtfc-header-flash--live'
             : state === 'error' ? 'rtfc-header-flash--error'
             : 'rtfc-header-flash--connecting';
-  header.classList.remove('rtfc-header-flash--connecting', 'rtfc-header-flash--live', 'rtfc-header-flash--error');
+  header.classList.remove('rtfc-header-flash--connecting', 'rtfc-header-flash--ready', 'rtfc-header-flash--live', 'rtfc-header-flash--error');
   void header.offsetWidth; // restart the animation if the same class was just used
   header.classList.add(cls);
   setTimeout(() => header.classList.remove(cls), 2200);
@@ -887,6 +889,10 @@ browser.runtime.onMessage.addListener((msg) => {
       if (msg.results) {
         for (const kp of msg.results) addKeyPoint(kp);
       }
+      break;
+
+    case 'CAPTURE_READY':
+      setDotState('ready');
       break;
 
     case 'KEYPOINT_VERDICT':

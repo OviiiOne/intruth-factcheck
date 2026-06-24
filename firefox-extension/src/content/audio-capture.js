@@ -177,6 +177,8 @@ async function connectGladia() {
 
     socket.onopen = () => {
       console.log('[audio-capture] gladia connected');
+      browser.runtime.sendMessage({ type: 'CAPTURE_READY' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Conectado a Gladia — escuchando, esperando que alguien hable…' });
       startGladiaPipeline();
     };
 
@@ -296,6 +298,7 @@ async function startWithWhisper() {
     type: 'PIPELINE_INFO',
     message: 'Whisper cargado — transcribiendo en local (sin detección de orador).',
   });
+  browser.runtime.sendMessage({ type: 'CAPTURE_READY' });
 
   startWhisperPipeline();
 }
