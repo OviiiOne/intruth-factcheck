@@ -49,10 +49,13 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #4ade80;
+  background: #fbbf24; /* connecting (amber) by default */
   animation: rtfc-blink 2s ease-in-out infinite;
   flex-shrink: 0;
 }
+
+.rtfc-dot--live  { background: #4ade80; }                  /* audio is flowing */
+.rtfc-dot--error { background: #f87171; animation: none; } /* something failed */
 
 @keyframes rtfc-blink {
   0%, 100% { opacity: 1; }
@@ -685,3 +688,11 @@
   flex-shrink: 0;
 }
 .rtfc-error-close:hover { opacity: 1; }
+
+/* Info variant (not an error — e.g. "capturing audio…") */
+.rtfc-error-toast--info {
+  background: rgba(148, 163, 184, 0.12);
+  border-bottom-color: rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+}
+.rtfc-error-toast--info .rtfc-error-close { color: #cbd5e1; }

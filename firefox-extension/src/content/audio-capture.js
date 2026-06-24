@@ -26,6 +26,27 @@ let whisperLoading = false;
 const WHISPER_CHUNK_SECONDS = 5;
 const WHISPER_SAMPLE_RATE = 16000;
 
+// Capture audio straight from the page's own media element (Firefox uses the
+// prefixed mozCaptureStream). This gives the exact tab audio with no mic, no screen
+// share and no OS loopback. Returns null if there's no usable element (e.g. the
+// player lives in a cross-origin iframe, or the media is tainted).
+function getPageMediaStream() {
+  const els = [...document.querySelectorAll('video, audio')];
+  const el = els.find(e => !e.paused && !e.muted && e.readyState >= 2)
+          || els.find(e => e.readyState >= 2)
+          || els[0];
+  if (!el) return null;
+  const capture = el.captureStream || el.mozCaptureStream;
+  if (!capture) return null;
+  try {
+    const stream = capture.call(el);
+    return (stream && stream.getAudioTracks().length) ? stream : null;
+  } catch (err) {
+    console.warn('[audio-capture] captureStream failed:', err);
+    return null;
+  }
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
 async function startAudioCapture() {
@@ -44,39 +65,59 @@ async function startAudioCapture() {
     catch { gladiaProxyUrl = ''; }
   }
 
-  // Always need tab audio — request getDisplayMedia first
-  try {
-    mediaStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true,
-    });
+  // 1) Best path: capture the page's own <video>/<audio> directly — exact tab audio,
+  //    no mic, no OS setup. Works when the player lives in this page (YouTube,
+  //    Twitch, news sites). It can't reach players inside cross-origin iframes.
+  // 2) Fallback: a system-audio INPUT device (loopback, e.g. "CABLE Output").
+  mediaStream = getPageMediaStream();
+  const usedPageMedia = !!mediaStream;
 
-    const audioTracks = mediaStream.getAudioTracks();
-    if (!audioTracks.length) {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'No audio — enable "Share audio" when sharing the tab.' });
-      stopAudioCapture();
+  if (!mediaStream) {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
+    } catch (err) {
+      console.error('[audio-capture] getUserMedia error:', err);
+      browser.runtime.sendMessage({
+        type: 'PIPELINE_ERROR',
+        message: err.name === 'NotAllowedError'
+          ? 'Permiso de audio denegado. Permite la entrada de audio para esta página.'
+          : 'Fallo al capturar audio: ' + err.message,
+      });
       return;
     }
+  }
 
-    mediaStream.getVideoTracks().forEach(t => t.stop());
-    captureActive = true;
+  const audioTracks = mediaStream.getAudioTracks();
+  if (!audioTracks.length) {
+    browser.runtime.sendMessage({
+      type: 'PIPELINE_ERROR',
+      message: 'No se detectó audio. Asegúrate de que el vídeo se está reproduciendo, o elige un dispositivo de audio del sistema.',
+    });
+    stopAudioCapture();
+    return;
+  }
 
-    if (gladiaKey || gladiaProxyUrl) {
-      transcriptionMode = 'gladia';
-      utteranceBuffer = '';
-      connectGladia();
-    } else {
-      transcriptionMode = 'whisper';
-      startWithWhisper();
-    }
+  captureActive = true;
 
-  } catch (err) {
-    console.error('[audio-capture] getDisplayMedia error:', err);
-    if (err.name === 'NotAllowedError') {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Tab sharing denied. Cannot capture audio without sharing a tab.' });
-    } else {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Audio capture failed: ' + err.message });
-    }
+  const src = usedPageMedia ? 'audio del vídeo' : 'dispositivo de audio';
+  const eng = gladiaProxyUrl ? 'Gladia (proxy)'
+            : gladiaKey ? 'Gladia (clave directa)'
+            : 'Whisper local';
+  browser.runtime.sendMessage({
+    type: 'PIPELINE_INFO',
+    message: 'Capturando ' + src + ' · Transcripción: ' + eng,
+  });
+
+  if (gladiaKey || gladiaProxyUrl) {
+    transcriptionMode = 'gladia';
+    utteranceBuffer = '';
+    connectGladia();
+  } else {
+    transcriptionMode = 'whisper';
+    startWithWhisper();
   }
 }
 
@@ -110,9 +151,12 @@ async function connectGladia() {
     });
 
     if (!initRes.ok) {
-      console.error('[gladia] init failed:', initRes.status);
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia init failed (' + initRes.status + '). Switching to local Whisper...' });
-      fallbackToWhisper();
+      let detail = '';
+      try { const e = await initRes.json(); detail = (e && e.error && e.error.message) || ''; } catch {}
+      console.error('[gladia] init failed:', initRes.status, detail);
+      const via = gladiaKey ? 'Gladia' : 'Gladia por proxy';
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: via + ' falló — estado ' + initRes.status + (detail ? ': ' + detail : '') + '.' });
+      stopAudioCapture();
       return;
     }
 
@@ -120,8 +164,8 @@ async function connectGladia() {
     const wsUrl = initData.url;
 
     if (!wsUrl) {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia error. Switching to local Whisper...' });
-      fallbackToWhisper();
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia no devolvió URL de sesión. Revisa la clave de Gladia en Railway.' });
+      stopAudioCapture();
       return;
     }
 
@@ -157,7 +201,7 @@ async function connectGladia() {
     };
 
     socket.onerror = () => {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia error. Switching to local Whisper...' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Gladia falló. Cambiando a Whisper local…' });
       fallbackToWhisper();
     };
 
@@ -165,10 +209,10 @@ async function connectGladia() {
       console.log('[gladia] closed:', e.code, e.reason);
       if (captureActive && transcriptionMode === 'gladia') {
         if (e.code === 1008 || e.code === 4001 || e.code === 4003) {
-          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia auth failed. Switching to local Whisper...' });
-          fallbackToWhisper();
+          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia: autenticación fallida (código ' + e.code + '). Revisa la clave de Gladia en Railway.' });
+          stopAudioCapture();
         } else {
-          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia disconnected — reconnecting...' });
+          browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Gladia desconectado (código ' + e.code + (e.reason ? ': ' + e.reason : '') + ') — reconectando…' });
           setTimeout(() => {
             if (captureActive && transcriptionMode === 'gladia') connectGladia();
           }, 2000);
@@ -178,8 +222,8 @@ async function connectGladia() {
 
   } catch (err) {
     console.error('[gladia] connection error:', err);
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia failed: ' + err.message + '. Switching to local Whisper...' });
-    fallbackToWhisper();
+    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'No se pudo conectar con Gladia/proxy: ' + err.message + ' (¿URL del proxy correcta? ¿la web bloquea la conexión?).' });
+    stopAudioCapture();
   }
 }
 
@@ -200,7 +244,8 @@ function startGladiaPipeline() {
     }
 
     const base64 = arrayBufferToBase64(int16.buffer);
-    socket.send(JSON.stringify({ frames: base64 }));
+    // Gladia v2 live expects this exact shape for streamed audio.
+    socket.send(JSON.stringify({ type: 'audio_chunk', data: { chunk: base64 } }));
   };
 
   source.connect(processor);
@@ -228,8 +273,8 @@ function fallbackToWhisper() {
 
 async function startWithWhisper() {
   browser.runtime.sendMessage({
-    type: 'PIPELINE_ERROR',
-    message: 'Cargando modelo Whisper local (~150MB, solo la 1ª vez)...',
+    type: 'PIPELINE_INFO',
+    message: 'Cargando modelo Whisper local (~150MB, solo la 1ª vez)…',
   });
 
   try {
@@ -238,14 +283,14 @@ async function startWithWhisper() {
     console.error('[whisper] model load error:', err);
     browser.runtime.sendMessage({
       type: 'PIPELINE_ERROR',
-      message: 'Failed to load Whisper model: ' + err.message,
+      message: 'No se pudo cargar el modelo Whisper: ' + err.message,
     });
     return;
   }
 
   browser.runtime.sendMessage({
-    type: 'PIPELINE_ERROR',
-    message: 'Whisper loaded — transcribing tab audio locally (no speaker detection).',
+    type: 'PIPELINE_INFO',
+    message: 'Whisper cargado — transcribiendo en local (sin detección de orador).',
   });
 
   startWhisperPipeline();

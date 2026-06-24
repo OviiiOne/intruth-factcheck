@@ -679,6 +679,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg.message });
       return Promise.resolve();
 
+    case 'PIPELINE_INFO':
+      if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_INFO', message: msg.message });
+      return Promise.resolve();
+
     case 'VERIFY_KEYPOINT':
       verifyKeyPoint(msg.id, msg.claim, msg.quote);
       return Promise.resolve();

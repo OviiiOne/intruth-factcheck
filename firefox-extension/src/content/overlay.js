@@ -259,25 +259,34 @@ function renderSpeakerEditor() {
 
 // ── Error toast ──────────────────────────────────────────────────────────────
 
-function showError(message) {
+function showError(message, level) {
   if (!panel) return;
+  const isInfo = level === 'info';
   const existing = panel.querySelector('.rtfc-error-toast');
   if (existing) existing.remove();
 
   const toast = document.createElement('div');
-  toast.className = 'rtfc-error-toast';
+  toast.className = 'rtfc-error-toast' + (isInfo ? ' rtfc-error-toast--info' : '');
   toast.innerHTML =
-    '<span class="rtfc-error-icon">⚠</span>' +
+    '<span class="rtfc-error-icon">' + (isInfo ? 'ℹ' : '⚠') + '</span>' +
     '<span class="rtfc-error-msg">' + escapeHtml(message) + '</span>' +
     '<button class="rtfc-error-close">✕</button>';
 
   toast.querySelector('.rtfc-error-close').addEventListener('click', () => toast.remove());
   panel.querySelector('#rtfc-header').insertAdjacentElement('afterend', toast);
 
-  // auto-dismiss after 8 seconds unless it's a fatal error
-  if (!message.includes('failed') && !message.includes('key')) {
-    setTimeout(() => toast.remove(), 8000);
-  }
+  // Info auto-dismisses; errors stay until replaced or closed, so failures get noticed.
+  if (isInfo) setTimeout(() => toast.remove(), 5000);
+}
+
+// The header dot reflects real state so failures are noticeable even after a toast
+// fades: amber = connecting, green = audio flowing, red = error.
+function setDotState(state) {
+  const dot = panel && panel.querySelector('.rtfc-dot');
+  if (!dot) return;
+  dot.classList.remove('rtfc-dot--live', 'rtfc-dot--error');
+  if (state === 'live') dot.classList.add('rtfc-dot--live');
+  else if (state === 'error') dot.classList.add('rtfc-dot--error');
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
@@ -797,6 +806,7 @@ browser.runtime.onMessage.addListener((msg) => {
 
     case 'START_FACTCHECK':
       createPanel();
+      setDotState('connecting');
       startSession();
       speakers = parseSpeakersFromTitle(document.title || '');
       speakerColorMap.clear();
@@ -820,6 +830,7 @@ browser.runtime.onMessage.addListener((msg) => {
       break;
 
     case 'TRANSCRIPT_RESULT':
+      if (msg.isFinal || (msg.text && msg.text.trim() && msg.text.trim() !== '...')) setDotState('live');
       if (msg.interim) {
         updateInterim(msg.text);
       } else if (msg.isFinal) {
@@ -846,7 +857,12 @@ browser.runtime.onMessage.addListener((msg) => {
       break;
 
     case 'PIPELINE_ERROR':
-      showError(msg.message || 'An error occurred in the fact-checking pipeline.');
+      showError(msg.message || 'Se produjo un error en el procesamiento.');
+      setDotState('error');
+      break;
+
+    case 'PIPELINE_INFO':
+      showError(msg.message || '', 'info');
       break;
 
     case 'NEW_KEYPOINTS':
