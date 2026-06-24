@@ -90,7 +90,7 @@ function exportPDF() {
     return;
   }
 
-  const pageTitle = document.title || 'Fact Check Session';
+  const pageTitle = document.title || 'InTruth';
   const exportDate = new Date().toLocaleString();
 
   const verdictColor = (v, c) => {
@@ -223,7 +223,7 @@ function exportPDF() {
   const unverifiableCount = sessionLog.filter(e => e.verdict === 'UNVERIFIABLE').length;
 
   const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/>' +
-    '<title>Fact Check Report</title><style>' +
+    '<title>InTruth — ' + escapeHtml(pageTitle) + '</title><style>' +
     '* { box-sizing: border-box; margin: 0; padding: 0; }' +
     'body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #111; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.5; }' +
     '.report-header { border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 24px; }' +
@@ -270,7 +270,7 @@ function exportPDF() {
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +
-      '<div class="report-title">Fact Check Report</div>' +
+      '<div class="report-title">InTruth — Informe</div>' +
       '<div class="report-meta">' +
         '<span>📺 ' + escapeHtml(pageTitle) + '</span>' +
         '<span>🕐 ' + escapeHtml(exportDate) + '</span>' +
@@ -298,7 +298,10 @@ function exportPDF() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = 'factcheck-report.html';
+  const safeTitle = (pageTitle || 'intruth')
+    .replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ-]/g, '')
+    .trim().replace(/\s+/g, '-').slice(0, 60) || 'intruth';
+  a.download = safeTitle + '-' + new Date().toISOString().slice(0, 10) + '.html';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

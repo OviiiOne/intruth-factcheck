@@ -62,9 +62,9 @@ const SUMMARY_PROMPT = `You are summarizing a live press conference for a Spanis
 Format:
 - Start with a short overview paragraph (2-3 sentences).
 - Then a blank line, then the main points, each on its own line starting with "• ", attributed to the speaker when known.
-- If some points were fact-checked, add a final short section with the verdicts.
+- ONLY if the input explicitly marks points as "[Verificado: ...]", add a final short section with those verdicts. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
 
-Be concise and neutral. Return only the summary text.`;
+Be concise and neutral. Report only what was said; do not assess truth yourself. Return only the summary text.`;
 
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
