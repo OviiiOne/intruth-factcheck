@@ -17,6 +17,10 @@ let transcriptionMode = 'none'; // 'gladia' | 'whisper'
 // Multilingual Whisper model (replaces English-only whisper-tiny.en).
 const WHISPER_MODEL = 'onnx-community/whisper-base';
 
+// For 'auto' detection, restrict Gladia to these languages (matches the popup list)
+// so it can't mis-detect into something irrelevant (e.g. Welsh in an English speech).
+const AUTO_LANGUAGES = ['es', 'en', 'fr', 'de', 'it', 'pt', 'ru', 'uk', 'tr', 'ar', 'he', 'fa', 'zh', 'ja'];
+
 // Whisper state
 let whisperPipeline = null;
 let whisperChunks = [];
@@ -142,7 +146,7 @@ async function connectGladia() {
         // 'auto' → empty list lets Gladia auto-detect (code_switching allows mid-stream changes).
         // Specific language → pin it for best accuracy.
         language_config: sourceLanguage === 'auto'
-          ? { languages: [], code_switching: true }
+          ? { languages: AUTO_LANGUAGES, code_switching: true }
           : { languages: [sourceLanguage], code_switching: false },
         realtime_processing: {
           words_accurate_timestamps: true,
