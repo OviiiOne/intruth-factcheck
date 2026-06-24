@@ -281,12 +281,30 @@ function showError(message, level) {
 
 // The header dot reflects real state so failures are noticeable even after a toast
 // fades: amber = connecting, green = audio flowing, red = error.
+let currentDotState = '';
+
 function setDotState(state) {
   const dot = panel && panel.querySelector('.rtfc-dot');
   if (!dot) return;
+  if (state === currentDotState) return; // only react to a real change
+  currentDotState = state;
   dot.classList.remove('rtfc-dot--live', 'rtfc-dot--error');
   if (state === 'live') dot.classList.add('rtfc-dot--live');
   else if (state === 'error') dot.classList.add('rtfc-dot--error');
+  flashHeader(state);
+}
+
+// Flash the whole header ~5 times in the new colour so the change is easy to catch.
+function flashHeader(state) {
+  const header = panel && panel.querySelector('#rtfc-header');
+  if (!header) return;
+  const cls = state === 'live' ? 'rtfc-header-flash--live'
+            : state === 'error' ? 'rtfc-header-flash--error'
+            : 'rtfc-header-flash--connecting';
+  header.classList.remove('rtfc-header-flash--connecting', 'rtfc-header-flash--live', 'rtfc-header-flash--error');
+  void header.offsetWidth; // restart the animation if the same class was just used
+  header.classList.add(cls);
+  setTimeout(() => header.classList.remove(cls), 2200);
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────────
@@ -365,6 +383,7 @@ function removePanel() {
   pendingCardTimes.clear();
   kpCards.clear();
   kpCounter = 0;
+  currentDotState = '';
   speakers = [];
   speakerColorMap.clear();
   sentenceTimestamps.length = 0;
