@@ -3,13 +3,14 @@ const app = express();
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GROQ_KEY = process.env.GROQ_API_KEY || '';
 const GLADIA_KEY = process.env.GLADIA_API_KEY || '';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const PROXY_TOKEN = process.env.PROXY_TOKEN || '';
 const PORT = process.env.PORT || 3000;
 
-if (!ANTHROPIC_KEY && !GEMINI_KEY) {
-  console.error('At least one of ANTHROPIC_API_KEY or GEMINI_API_KEY is required');
+if (!ANTHROPIC_KEY && !GEMINI_KEY && !GROQ_KEY) {
+  console.error('At least one of ANTHROPIC_API_KEY, GEMINI_API_KEY or GROQ_API_KEY is required');
   process.exit(1);
 }
 
@@ -109,6 +110,45 @@ async function handleGemini(body) {
   return { status: 200, data: fromGeminiResponse(raw) };
 }
 
+async function handleGroq(body) {
+  const { max_tokens, temperature, system, messages, grounded } = body;
+  // 'compound-beta' has built-in web search (free tier); use it only when grounding
+  // is requested (verification). Otherwise a fast normal model for the frequent calls.
+  const model = grounded ? 'compound-beta' : 'llama-3.3-70b-versatile';
+
+  const groqMessages = [];
+  if (system) groqMessages.push({ role: 'system', content: system });
+  for (const m of messages) {
+    groqMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+  }
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+    body: JSON.stringify({
+      model,
+      messages: groqMessages,
+      temperature: temperature ?? 0,
+      max_tokens: Math.min(max_tokens || 768, 4096),
+    }),
+  });
+
+  const raw = await response.json();
+  if (!response.ok) {
+    return { status: response.status, data: { error: { message: raw.error?.message || 'Groq API error' } } };
+  }
+
+  const msg = raw.choices?.[0]?.message || {};
+  const text = msg.content || '';
+  // compound models report what they searched; pull source URLs when present.
+  const sources = [];
+  for (const t of (msg.executed_tools || [])) {
+    const results = t?.search_results?.results || t?.results || [];
+    for (const r of results) { if (r && r.url) sources.push(r.url); }
+  }
+  return { status: 200, data: { content: [{ type: 'text', text }], model, stop_reason: 'end_turn', sources } };
+}
+
 app.post('/', async (req, res) => {
   const { messages, provider } = req.body;
 
@@ -118,13 +158,14 @@ app.post('/', async (req, res) => {
 
   try {
     let result;
-    const useGemini = provider === 'gemini' || (!ANTHROPIC_KEY && GEMINI_KEY);
-    const useClaude = provider === 'claude' || (!GEMINI_KEY && ANTHROPIC_KEY);
-
-    if (useGemini && GEMINI_KEY) {
+    if (provider === 'groq' && GROQ_KEY) {
+      result = await handleGroq(req.body);
+    } else if (provider === 'gemini' && GEMINI_KEY) {
       result = await handleGemini(req.body);
-    } else if (useClaude && ANTHROPIC_KEY) {
+    } else if (provider === 'claude' && ANTHROPIC_KEY) {
       result = await handleClaude(req.body);
+    } else if (GROQ_KEY) {
+      result = await handleGroq(req.body);
     } else if (GEMINI_KEY) {
       result = await handleGemini(req.body);
     } else {
@@ -164,6 +205,7 @@ app.post('/gladia/live', async (req, res) => {
 
 app.get('/health', (req, res) => {
   const providers = [];
+  if (GROQ_KEY) providers.push('groq');
   if (ANTHROPIC_KEY) providers.push('claude');
   if (GEMINI_KEY) providers.push('gemini');
   res.json({ status: 'ok', providers, gladia: !!GLADIA_KEY });

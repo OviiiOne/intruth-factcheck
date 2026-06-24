@@ -11,28 +11,26 @@ const modeApiKeyBtn = document.getElementById('modeApiKey');
 const modeProxyBtn = document.getElementById('modeProxy');
 const apiKeyFields = document.getElementById('apiKeyFields');
 const proxyFields = document.getElementById('proxyFields');
+const provGroqBtn = document.getElementById('provGroq');
 const provGeminiBtn = document.getElementById('provGemini');
 const provClaudeBtn = document.getElementById('provClaude');
 
 let isActive = false;
 let mode = 'apikey';
-let aiProvider = 'gemini';
+let aiProvider = 'groq';
 
 // ── Provider toggle ──────────────────────────────────────────────────────────
 
 function switchProvider(prov) {
   aiProvider = prov;
-  if (prov === 'gemini') {
-    provGeminiBtn.classList.add('active');
-    provClaudeBtn.classList.remove('active');
-  } else {
-    provClaudeBtn.classList.add('active');
-    provGeminiBtn.classList.remove('active');
-  }
+  provGroqBtn.classList.toggle('active', prov === 'groq');
+  provGeminiBtn.classList.toggle('active', prov === 'gemini');
+  provClaudeBtn.classList.toggle('active', prov === 'claude');
   browser.storage.local.set({ aiProvider: prov });
   updateHint();
 }
 
+provGroqBtn.addEventListener('click', () => switchProvider('groq'));
 provGeminiBtn.addEventListener('click', () => switchProvider('gemini'));
 provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
@@ -45,7 +43,7 @@ browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey'
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
   if (data.connectionMode === 'proxy') switchMode('proxy');
-  switchProvider(data.aiProvider || 'gemini');
+  switchProvider(data.aiProvider || 'groq');
   updateHint();
 });
 

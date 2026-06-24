@@ -14,7 +14,7 @@ async function loadKeys() {
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
-  AI_PROVIDER = data.aiProvider || 'claude';
+  AI_PROVIDER = data.aiProvider || 'groq';
   SOURCE_LANGUAGE = data.sourceLanguage || 'auto';
 }
 
