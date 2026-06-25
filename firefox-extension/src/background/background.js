@@ -7,15 +7,17 @@ let PROXY_URL = '';
 let PROXY_TOKEN = '';
 let AI_PROVIDER = 'claude';
 let SOURCE_LANGUAGE = 'auto';
+let PARTICIPANTS = '';
 const SERPER_KEY = '';
 
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
   AI_PROVIDER = data.aiProvider || 'groq';
   SOURCE_LANGUAGE = data.sourceLanguage || 'auto';
+  PARTICIPANTS = data.participants || '';
 }
 
 const EVALUATE_PROMPT = `You are a real-time fact-checker. Given a transcript excerpt, identify check-worthy factual claims and evaluate each one.
@@ -494,12 +496,14 @@ async function groundAndUpdate(contextText, fastResults, title, lexicalSummary, 
 async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId) {
   try {
     const dateContext = pageDate ? `\nDate: ${pageDate}` : '';
-    const titleNames = parseSpeakersFromTitle(title || '');
-    const speakerLegend = titleNames.length
-      ? `\nParticipants: ${titleNames.join(' and ')}. Attribute each point to the right person; never output "Speaker N".`
-      : `\nIdentify the speaker from context; never output "Speaker N".`;
-    const titleContext = title
-      ? `Event: "${title}"${dateContext}${speakerLegend}\n\n`
+    const participantList = PARTICIPANTS
+      ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean)
+      : parseSpeakersFromTitle(title || '');
+    const speakerLegend = participantList.length
+      ? `\nParticipants: ${participantList.join(', ')}. For "speaker", use ONLY one of these exact names (decide from first-person language and content), or null if genuinely unclear. NEVER invent any other name.`
+      : `\nIdentify the speaker from context; use null if unclear; never output "Speaker N".`;
+    const titleContext = (title || participantList.length)
+      ? `Event: "${title || ''}"${dateContext}${speakerLegend}\n\n`
       : '';
 
     const notedList = [...recentClaims.values()]

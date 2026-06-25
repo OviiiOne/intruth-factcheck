@@ -5,6 +5,7 @@ const proxyUrlEl = document.getElementById('proxyUrl');
 const proxyTokenEl = document.getElementById('proxyToken');
 const gladiaEl = document.getElementById('gladiaKey');
 const sourceLanguageEl = document.getElementById('sourceLanguage');
+const participantsEl = document.getElementById('participants');
 const keyHint = document.getElementById('keyHint');
 const keysSection = document.getElementById('keysSection');
 const modeApiKeyBtn = document.getElementById('modeApiKey');
@@ -36,12 +37,13 @@ provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'connectionMode', 'aiProvider']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
   if (data.proxyToken) { proxyTokenEl.value = data.proxyToken; proxyTokenEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
+  if (data.participants) participantsEl.value = data.participants;
   if (data.connectionMode === 'proxy') switchMode('proxy');
   switchProvider(data.aiProvider || 'groq');
   updateHint();
@@ -49,6 +51,10 @@ browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey'
 
 sourceLanguageEl.addEventListener('change', () => {
   browser.storage.local.set({ sourceLanguage: sourceLanguageEl.value });
+});
+
+participantsEl.addEventListener('change', () => {
+  browser.storage.local.set({ participants: participantsEl.value.trim() });
 });
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────
@@ -150,7 +156,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, connectionMode: mode, aiProvider });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, participants: participantsEl.value.trim(), connectionMode: mode, aiProvider });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });
