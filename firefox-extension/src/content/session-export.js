@@ -26,8 +26,8 @@ function logVerdict(result) {
 }
 
 // Full session transcript, each line tagged with its clock timecode HH:MM:SS:FF.
-function logTranscript(timecode, text, translation) {
-  transcriptLog.push({ timecode, text, translation: translation || '' });
+function logTranscript(timecode, text, translation, speaker) {
+  transcriptLog.push({ timecode, text, translation: translation || '', speaker: speaker || null });
 }
 
 // Neutral key points extracted live (verdict added later if the user verifies one).
@@ -165,12 +165,24 @@ function exportPDF() {
     'TRUE': 'Verdadero', 'SUBSTANTIALLY TRUE': 'Mayormente cierto',
     'FALSE': 'Falso', 'MISLEADING': 'Engañoso', 'UNVERIFIABLE': 'No verificable',
   };
+  const CAT_COLORS = {
+    ANUNCIO: '#3b82f6', CIFRA: '#8b5cf6', COMPROMISO: '#10b981',
+    DECLARACION: '#f59e0b', CITA: '#06b6d4', POLITICA: '#ef4444', OTRO: '#6b7280',
+  };
+  // Consistent colour per speaker name across key points and the transcript.
+  const spkColorMap = {};
+  const speakerColor = (name) => {
+    if (!name) return '#444';
+    if (!spkColorMap[name]) spkColorMap[name] = speakerColors[Object.keys(spkColorMap).length % speakerColors.length];
+    return spkColorMap[name];
+  };
   const keyPointsHTML = keyPointsLog.length
     ? '<div class="claims-title">Puntos clave (' + keyPointsLog.length + ')</div>' +
       keyPointsLog.map(kp => {
         const cat = (kp.category || 'OTRO').toUpperCase();
         const label = CAT_LABELS[cat] || (cat.charAt(0) + cat.slice(1).toLowerCase());
-        const spk = kp.speaker ? '<span class="kp-speaker">' + escapeHtml(kp.speaker) + '</span>' : '';
+        const catColor = CAT_COLORS[cat] || '#64748b';
+        const spk = kp.speaker ? '<span class="kp-speaker" style="color:' + speakerColor(kp.speaker) + '">' + escapeHtml(kp.speaker) + '</span>' : '';
         const quote = kp.quote ? '<div class="kp-quote">“' + escapeHtml(kp.quote) + '”</div>' : '';
         let verdict = '';
         if (kp.verdict) {
@@ -185,7 +197,7 @@ function exportPDF() {
         }
         return '<div class="kp-card">' +
           '<div class="kp-header">' +
-            '<span class="kp-cat">' + escapeHtml(label) + '</span>' +
+            '<span class="kp-cat" style="color:' + catColor + '">' + escapeHtml(label) + '</span>' +
             spk +
             '<span class="timestamp">' + escapeHtml(kp.timecode || '') + '</span>' +
           '</div>' +
@@ -201,14 +213,20 @@ function exportPDF() {
       '<div class="summary-box-text">' + escapeHtml(sessionSummary) + '</div></div>'
     : '';
 
+  let trLastSpk = null;
   const transcriptHTML = transcriptLog.length
     ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
       '<div class="transcript">' +
         transcriptLog.map(t => {
+          let spkHTML = '';
+          if (t.speaker && t.speaker !== trLastSpk) {
+            trLastSpk = t.speaker;
+            spkHTML = '<div class="transcript-speaker" style="color:' + speakerColor(t.speaker) + '">' + escapeHtml(t.speaker) + '</div>';
+          }
           const tr = (t.translation && t.translation.trim() && t.translation.trim() !== (t.text || '').trim())
             ? '<div class="transcript-tr">↳ ' + escapeHtml(t.translation) + '</div>'
             : '';
-          return '<div class="transcript-line">' +
+          return spkHTML + '<div class="transcript-line">' +
             '<span class="transcript-tc">[' + escapeHtml(t.timecode) + ']</span> ' +
             escapeHtml(t.text) + tr +
           '</div>';
@@ -267,6 +285,7 @@ function exportPDF() {
     '.transcript-line { font-size: 12px; color: #333; line-height: 1.6; margin-bottom: 2px; }' +
     '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
     '.transcript-tr { margin-left: 16px; color: #1d4ed8; font-size: 12px; line-height: 1.5; }' +
+    '.transcript-speaker { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }' +
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +

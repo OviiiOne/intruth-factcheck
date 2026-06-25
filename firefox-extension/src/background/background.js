@@ -34,7 +34,7 @@ Return ONLY a JSON array. No markdown, no explanation outside the array.`;
 
 const KEYPOINTS_PROMPT = `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
 
-Be SELECTIVE — extract only what a journalist would jot down: real announcements, figures, commitments, named decisions, and significant claims (including geopolitical ones like "Iran will not have a nuclear weapon", even if repeated). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. Most excerpts have only 0–1 key points; rarely more. Quality over quantity — do NOT turn every sentence into a key point.
+Be SELECTIVE — extract only what a journalist would jot down: real announcements, figures, commitments, named decisions, and significant claims (including geopolitical ones like "Iran will not have a nuclear weapon", even if repeated). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. ALSO skip personal praise, compliments and mutual flattery between officials (e.g. one leader calling another "a great guy / the best Secretary General"), greetings, and procedural remarks ("any questions?"). Most excerpts have only 0–1 key points; often none. Quality over quantity — do NOT turn every sentence into a key point.
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 

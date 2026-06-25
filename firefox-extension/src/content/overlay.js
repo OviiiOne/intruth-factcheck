@@ -874,7 +874,7 @@ browser.runtime.onMessage.addListener((msg) => {
         const displayText = msg.text.replace(/^\[.*?\]\s*/, '');
         const translation = msg.translation || '';
         addTranscriptLine(ts, displayText, translation, msg.speaker || null);
-        if (typeof logTranscript === 'function') logTranscript(ts, displayText, translation);
+        if (typeof logTranscript === 'function') logTranscript(ts, displayText, translation, msg.speaker || null);
         // track which speaker is active from label
         const labelMatch = msg.text.match(/^\[(.+?)\]/);
         if (labelMatch && speakers.includes(labelMatch[1])) {
