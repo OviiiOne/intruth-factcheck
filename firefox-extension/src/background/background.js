@@ -10,14 +10,30 @@ let SOURCE_LANGUAGE = 'auto';
 let PARTICIPANTS = '';
 const SERPER_KEY = '';
 
+// User feedback (soft learning): examples injected into the key-point prompt.
+let NEG_EXAMPLES = []; // "not relevant" — avoid extracting things like these
+let POS_EXAMPLES = []; // "interesting" — prioritise things like these
+
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
   AI_PROVIDER = data.aiProvider || 'groq';
   SOURCE_LANGUAGE = data.sourceLanguage || 'auto';
   PARTICIPANTS = data.participants || '';
+  NEG_EXAMPLES = Array.isArray(data.feedbackNegative) ? data.feedbackNegative : [];
+  POS_EXAMPLES = Array.isArray(data.feedbackPositive) ? data.feedbackPositive : [];
+}
+
+// Store a feedback example (deduped, capped) and persist it across sessions.
+function addFeedback(kind, text) {
+  const t = (text || '').trim();
+  if (!t) return;
+  const arr = kind === 'neg' ? NEG_EXAMPLES : POS_EXAMPLES;
+  if (!arr.includes(t)) arr.push(t);
+  while (arr.length > 15) arr.shift();
+  browser.storage.local.set({ feedbackNegative: NEG_EXAMPLES, feedbackPositive: POS_EXAMPLES });
 }
 
 const EVALUATE_PROMPT = `You are a real-time fact-checker. Given a transcript excerpt, identify check-worthy factual claims and evaluate each one.
@@ -67,6 +83,8 @@ Format:
 - ONLY if the input explicitly marks points as "[Verificado: ...]", add a final short section with those verdicts. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
 
 Be concise and neutral. Report only what was said; do not assess truth yourself. Return only the summary text.`;
+
+const MANUAL_KEYPOINT_PROMPT = `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in SPANISH>", "category": "<one of ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA, or a short Spanish label>", "quote": "<the fragment in its original language>", "speaker": null}. No text outside the JSON.`;
 
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
@@ -500,8 +518,8 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
       ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean)
       : parseSpeakersFromTitle(title || '');
     const speakerLegend = participantList.length
-      ? `\nParticipants: ${participantList.join(', ')}. For "speaker", use ONLY one of these exact names (decide from first-person language and content), or null if genuinely unclear. NEVER invent any other name.`
-      : `\nIdentify the speaker from context; use null if unclear; never output "Speaker N".`;
+      ? `\nParticipants: ${participantList.join(', ')}. For "speaker": if it is clearly one of these participants, use that EXACT name; if it is someone else (a journalist or moderator asking a question, or anyone not listed), use "Otro"; use null only if truly impossible to tell. Do NOT force a non-participant onto a participant's name.`
+      : `\nIdentify the speaker from context; use "Otro" for journalists/moderators; use null if unclear; never output "Speaker N".`;
     const titleContext = (title || participantList.length)
       ? `Event: "${title || ''}"${dateContext}${speakerLegend}\n\n`
       : '';
@@ -513,8 +531,16 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
       .join('\n- ');
     const alreadyNoted = notedList ? `\n\nAlready noted — do NOT repeat:\n- ${notedList}\n` : '';
 
+    let feedbackCtx = '';
+    if (NEG_EXAMPLES.length) {
+      feedbackCtx += `\n\nThe user marked these as NOT relevant — do NOT extract anything like them:\n- ${NEG_EXAMPLES.slice(-15).join('\n- ')}`;
+    }
+    if (POS_EXAMPLES.length) {
+      feedbackCtx += `\n\nThe user marked these as important — prioritise anything similar:\n- ${POS_EXAMPLES.slice(-15).join('\n- ')}`;
+    }
+
     const raw = (await callClaude(
-      `${titleContext}Transcript: "${contextText}"${alreadyNoted}`,
+      `${titleContext}Transcript: "${contextText}"${alreadyNoted}${feedbackCtx}`,
       KEYPOINTS_PROMPT,
       false, 1536, true
     )).text;
@@ -538,6 +564,23 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     }
   } catch (err) {
     console.error('[keypoints] error:', err);
+  }
+}
+
+// Turn a transcript fragment the user marked (⭐) into a key point + learn from it.
+async function addManualKeyPoint(text) {
+  if (!text || !text.trim()) return;
+  addFeedback('pos', text);
+  try {
+    const raw = (await callClaude(`Fragment: "${text}"`, MANUAL_KEYPOINT_PROMPT, false, 512, true)).text;
+    const kp = parseObject(raw);
+    const result = (kp && kp.point)
+      ? { point: kp.point, category: (kp.category || 'OTRO').toUpperCase(), quote: kp.quote || text, speaker: kp.speaker || null, dominantSpeakerId: null }
+      : { point: text, category: 'OTRO', quote: text, speaker: null, dominantSpeakerId: null };
+    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [result] });
+  } catch (err) {
+    console.error('[manual-keypoint] error:', err);
+    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [{ point: text, category: 'OTRO', quote: text, speaker: null }] });
   }
 }
 
@@ -703,6 +746,27 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     case 'VERIFY_KEYPOINT':
       verifyKeyPoint(msg.id, msg.claim, msg.quote);
       return Promise.resolve();
+
+    case 'FEEDBACK_NEGATIVE':
+      addFeedback('neg', msg.text);
+      return Promise.resolve();
+
+    case 'ADD_MANUAL_KEYPOINT':
+      addManualKeyPoint(msg.text);
+      return Promise.resolve();
+
+    case 'ADD_PARTICIPANT': {
+      const name = (msg.name || '').trim();
+      if (name) {
+        const list = PARTICIPANTS ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean) : [];
+        if (!list.includes(name)) {
+          list.push(name);
+          PARTICIPANTS = list.join(', ');
+          browser.storage.local.set({ participants: PARTICIPANTS });
+        }
+      }
+      return Promise.resolve();
+    }
 
     case 'SUMMARIZE':
       summarizeSession(msg.input || '');

@@ -17,6 +17,8 @@ let interimEl = null;
 let claimFeedEl = null;
 let verdictListEl = null;
 let summaryEl = null;
+let interestingBtn = null;
+let participantNames = [];
 let transcriptCollapsed = false;
 const pendingCards    = new Map();
 const pendingCardTimes = new Map();
@@ -339,6 +341,7 @@ function createPanel() {
           '<span class="rtfc-section-label">Puntos clave</span>',
           '<div id="rtfc-speaker-editor"></div>',
         '</div>',
+        '<div id="rtfc-participants"></div>',
         '<div id="rtfc-verdicts">',
           '<p class="rtfc-empty">Los puntos clave aparecerán aquí…</p>',
         '</div>',
@@ -362,6 +365,8 @@ function createPanel() {
   panel.querySelector('#rtfc-export').addEventListener('click', () => exportPDF());
   panel.querySelector('#rtfc-summary-btn').addEventListener('click', () => generateSummary());
 
+  setupInterestingButton();
+  renderParticipantsBar();
   makeDraggable(panel);
 
   panel.querySelector('#rtfc-transcript-toggle').addEventListener('click', () => {
@@ -387,6 +392,8 @@ function removePanel() {
   kpCounter = 0;
   currentDotState = '';
   lastTranscriptSpeaker = null;
+  if (interestingBtn) { interestingBtn.remove(); interestingBtn = null; }
+  participantNames = [];
   speakers = [];
   speakerColorMap.clear();
   sentenceTimestamps.length = 0;
@@ -716,7 +723,10 @@ function buildKeyPointCard(kp) {
     '</div>',
     '<p class="rtfc-kp-point">' + escapeHtml(kp.point) + '</p>',
     quoteHTML,
-    '<div class="rtfc-kp-actions"><button class="rtfc-verify-btn">✓ Verificar</button></div>',
+    '<div class="rtfc-kp-actions">',
+      '<button class="rtfc-verify-btn">✓ Verificar</button>',
+      '<button class="rtfc-discard-btn" title="No relevante — descartar y aprender">👎</button>',
+    '</div>',
   ].join('');
 
   const btn = card.querySelector('.rtfc-verify-btn');
@@ -729,6 +739,13 @@ function buildKeyPointCard(kp) {
       claim: kp.point,
       quote: kp.quote || '',
     });
+  });
+
+  const discardBtn = card.querySelector('.rtfc-discard-btn');
+  if (discardBtn) discardBtn.addEventListener('click', () => {
+    browser.runtime.sendMessage({ type: 'FEEDBACK_NEGATIVE', text: kp.point });
+    kpCards.delete(kp._id);
+    card.remove();
   });
 
   return card;
@@ -809,6 +826,70 @@ function renderSummary(text) {
   if (typeof setSummary === 'function') setSummary(text);
 }
 
+// Participants bar: shows current participants and lets the user add more live
+// (e.g. journalists who introduce themselves as they speak).
+function renderParticipantsBar() {
+  const el = panel && panel.querySelector('#rtfc-participants');
+  if (!el) return;
+  el.innerHTML =
+    '<span class="rtfc-part-icon" title="Participantes">👥</span>' +
+    participantNames.map(n => '<span class="rtfc-part-chip">' + escapeHtml(n) + '</span>').join('') +
+    '<input class="rtfc-part-input" placeholder="+ añadir" />';
+  const input = el.querySelector('.rtfc-part-input');
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const name = input.value.trim();
+    input.value = '';
+    if (!name || participantNames.includes(name)) return;
+    participantNames.push(name);
+    browser.runtime.sendMessage({ type: 'ADD_PARTICIPANT', name });
+    const chip = document.createElement('span');
+    chip.className = 'rtfc-part-chip';
+    chip.textContent = name;
+    el.insertBefore(chip, input);
+  });
+}
+
+// ⭐ "Interesante": select text in the transcript → add it as a key point + learn.
+function setupInterestingButton() {
+  if (interestingBtn) return;
+  interestingBtn = document.createElement('button');
+  interestingBtn.id = 'rtfc-interesting';
+  interestingBtn.textContent = '⭐ Interesante';
+  interestingBtn.style.display = 'none';
+  document.body.appendChild(interestingBtn);
+
+  interestingBtn.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+  interestingBtn.addEventListener('click', () => {
+    const sel = window.getSelection();
+    const text = sel ? sel.toString().trim() : '';
+    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text });
+    if (sel) sel.removeAllRanges();
+    hideInterestingBtn();
+  });
+
+  if (!transcriptFeedEl) return;
+  transcriptFeedEl.addEventListener('mouseup', () => {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      const text = sel ? sel.toString().trim() : '';
+      if (text && sel.rangeCount && transcriptFeedEl.contains(sel.anchorNode)) {
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        interestingBtn.style.left = Math.max(4, rect.left) + 'px';
+        interestingBtn.style.top  = Math.max(4, rect.top - 30) + 'px';
+        interestingBtn.style.display = 'block';
+      } else {
+        hideInterestingBtn();
+      }
+    }, 0);
+  });
+}
+
+function hideInterestingBtn() {
+  if (interestingBtn) interestingBtn.style.display = 'none';
+}
+
 function makeDraggable(panel) {
   const header = panel.querySelector('#rtfc-header');
   let isDragging = false, startX, startY, startLeft, startTop;
@@ -838,6 +919,10 @@ browser.runtime.onMessage.addListener((msg) => {
     case 'START_FACTCHECK':
       createPanel();
       setDotState('connecting');
+      browser.storage.local.get('participants').then(d => {
+        participantNames = (d.participants || '').split(',').map(s => s.trim()).filter(Boolean);
+        renderParticipantsBar();
+      });
       startSession();
       speakers = parseSpeakersFromTitle(document.title || '');
       speakerColorMap.clear();
