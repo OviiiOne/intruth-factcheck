@@ -139,7 +139,7 @@ async function searchWeb(query, retries = 2) {
 
 // ── Claude (direct or proxy) ─────────────────────────────────────────────────
 
-async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768, json = false) {
+async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768, json = false, silent = false) {
   let res;
 
   if (PROXY_URL) {
@@ -177,7 +177,7 @@ async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens
       }),
     });
   } else {
-    if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: 'No API key or proxy configured.' });
+    if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: 'No API key or proxy configured.' });
     return { text: '', sources: [] };
   }
 
@@ -185,7 +185,7 @@ async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens
   if (data.error) {
     const msg = data.error.message || 'Unknown API error';
     console.error('[claude] API error:', msg);
-    if (activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg });
+    if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg });
     return { text: '', sources: [] };
   }
   const raw = data.content?.[0]?.text?.trim() || '';
@@ -542,7 +542,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyNoted}${feedbackCtx}`,
       KEYPOINTS_PROMPT,
-      false, 1536, true
+      false, 2048, true, true
     )).text;
     const obj = parseObject(raw);
     const results = (obj && Array.isArray(obj.points)) ? obj.points : parseArray(raw);
@@ -646,7 +646,7 @@ function needsTranslation() {
 async function translateToSpanish(text) {
   if (!text || !text.trim()) return '';
   try {
-    const out = (await callClaude(text, TRANSLATE_PROMPT)).text;
+    const out = (await callClaude(text, TRANSLATE_PROMPT, false, 768, false, true)).text;
     return (out || '').trim();
   } catch {
     return '';
@@ -764,6 +764,34 @@ browser.runtime.onMessage.addListener((msg, sender) => {
           PARTICIPANTS = list.join(', ');
           browser.storage.local.set({ participants: PARTICIPANTS });
         }
+      }
+      return Promise.resolve();
+    }
+
+    case 'REMOVE_PARTICIPANT': {
+      const name = (msg.name || '').trim();
+      if (name) {
+        const list = PARTICIPANTS ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const idx = list.indexOf(name);
+        if (idx !== -1) {
+          list.splice(idx, 1);
+          PARTICIPANTS = list.join(', ');
+          browser.storage.local.set({ participants: PARTICIPANTS });
+        }
+      }
+      return Promise.resolve();
+    }
+
+    case 'RENAME_PARTICIPANT': {
+      const oldName = (msg.oldName || '').trim();
+      const newName = (msg.newName || '').trim();
+      if (oldName && newName) {
+        const list = PARTICIPANTS ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean) : [];
+        const idx = list.indexOf(oldName);
+        if (idx !== -1) list[idx] = newName;
+        else if (!list.includes(newName)) list.push(newName);
+        PARTICIPANTS = list.join(', ');
+        browser.storage.local.set({ participants: PARTICIPANTS });
       }
       return Promise.resolve();
     }

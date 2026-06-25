@@ -131,13 +131,21 @@ async function handleGroq(body) {
   // Force valid JSON for structured calls (key points). Not with compound (search).
   if (json && !grounded) groqBody.response_format = { type: 'json_object' };
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const callGroq = (b) => fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-    body: JSON.stringify(groqBody),
+    body: JSON.stringify(b),
   });
 
-  const raw = await response.json();
+  let response = await callGroq(groqBody);
+  let raw = await response.json();
+  // JSON mode can fail ("Failed to generate JSON"); retry once as plain text — the
+  // prompt still asks for JSON and the client parses leniently.
+  if (!response.ok && groqBody.response_format) {
+    delete groqBody.response_format;
+    response = await callGroq(groqBody);
+    raw = await response.json();
+  }
   if (!response.ok) {
     return { status: response.status, data: { error: { message: raw.error?.message || 'Groq API error' } } };
   }

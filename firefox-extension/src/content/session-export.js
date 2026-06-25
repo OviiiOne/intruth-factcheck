@@ -72,6 +72,12 @@ function buildSummaryInput() {
 
 function setSummary(text) { sessionSummary = text || ''; }
 
+// Apply a participant rename to everything logged so the export stays consistent.
+function updateSpeakerName(oldName, newName) {
+  keyPointsLog.forEach(k => { if (k.speaker === oldName) k.speaker = newName; });
+  transcriptLog.forEach(t => { if (t.speaker === oldName) t.speaker = newName; });
+}
+
 function startSession() {
   sessionLog.length = 0;
   transcriptLog.length = 0;

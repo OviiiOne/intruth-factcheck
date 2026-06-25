@@ -327,6 +327,7 @@ function createPanel() {
       '</div>',
     '</div>',
     '<div id="rtfc-body">',
+      '<div id="rtfc-participants"></div>',
       '<div id="rtfc-summary" style="display:none"></div>',
       '<div id="rtfc-transcript-section">',
         '<div class="rtfc-section-header">',
@@ -341,7 +342,6 @@ function createPanel() {
           '<span class="rtfc-section-label">Puntos clave</span>',
           '<div id="rtfc-speaker-editor"></div>',
         '</div>',
-        '<div id="rtfc-participants"></div>',
         '<div id="rtfc-verdicts">',
           '<p class="rtfc-empty">Los puntos clave aparecerán aquí…</p>',
         '</div>',
@@ -831,23 +831,71 @@ function renderSummary(text) {
 function renderParticipantsBar() {
   const el = panel && panel.querySelector('#rtfc-participants');
   if (!el) return;
+  const chips = participantNames.map((n, i) =>
+    '<span class="rtfc-part-chip">' +
+      '<span class="rtfc-part-name" data-i="' + i + '" title="Clic para editar">' + escapeHtml(n) + '</span>' +
+      '<button class="rtfc-part-del" data-i="' + i + '" title="Quitar">✕</button>' +
+    '</span>'
+  ).join('');
   el.innerHTML =
-    '<span class="rtfc-part-icon" title="Participantes">👥</span>' +
-    participantNames.map(n => '<span class="rtfc-part-chip">' + escapeHtml(n) + '</span>').join('') +
-    '<input class="rtfc-part-input" placeholder="+ añadir" />';
+    '<span class="rtfc-part-label">👥 Participantes:</span>' +
+    chips +
+    '<input class="rtfc-part-input" placeholder="+ nombre (coma para varios)" />';
+
+  el.querySelectorAll('.rtfc-part-name').forEach(span => {
+    span.addEventListener('click', () => editParticipant(parseInt(span.dataset.i)));
+  });
+
   const input = el.querySelector('.rtfc-part-input');
   input.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const name = input.value.trim();
+    const names = input.value.split(',').map(s => s.trim()).filter(Boolean);
     input.value = '';
-    if (!name || participantNames.includes(name)) return;
-    participantNames.push(name);
-    browser.runtime.sendMessage({ type: 'ADD_PARTICIPANT', name });
-    const chip = document.createElement('span');
-    chip.className = 'rtfc-part-chip';
-    chip.textContent = name;
-    el.insertBefore(chip, input);
+    let added = false;
+    for (const name of names) {
+      if (!participantNames.includes(name)) {
+        participantNames.push(name);
+        browser.runtime.sendMessage({ type: 'ADD_PARTICIPANT', name });
+        added = true;
+      }
+    }
+    if (added) renderParticipantsBar();
+  });
+
+  el.querySelectorAll('.rtfc-part-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.i);
+      const name = participantNames[i];
+      if (name == null) return;
+      participantNames.splice(i, 1);
+      browser.runtime.sendMessage({ type: 'REMOVE_PARTICIPANT', name });
+      renderParticipantsBar();
+    });
+  });
+}
+
+// Edit a participant's name in place (fix typos) and update everything already tagged.
+function editParticipant(i) {
+  const oldName = participantNames[i];
+  if (oldName == null) return;
+  const newName = (window.prompt('Editar nombre del participante:', oldName) || '').trim();
+  if (!newName || newName === oldName) return;
+  participantNames[i] = newName;
+  browser.runtime.sendMessage({ type: 'RENAME_PARTICIPANT', oldName, newName });
+  renameSpeakerInCards(oldName, newName);
+  if (typeof updateSpeakerName === 'function') updateSpeakerName(oldName, newName);
+  renderParticipantsBar();
+}
+
+// Update the speaker shown on key-point cards already on screen after a rename.
+function renameSpeakerInCards(oldName, newName) {
+  kpCards.forEach(card => {
+    if (card._kpData && card._kpData.speaker === oldName) {
+      card._kpData.speaker = newName;
+      const tag = card.querySelector('.rtfc-speaker-tag');
+      if (tag) tag.textContent = newName;
+    }
   });
 }
 

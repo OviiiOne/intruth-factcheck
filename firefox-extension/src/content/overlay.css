@@ -481,24 +481,47 @@
 
 .rtfc-kp-noverdict { font-size: 10px; color: #888; font-style: italic; }
 
-/* ── Participants bar ── */
+/* ── Participants bar (top of panel) ── */
 #rtfc-participants {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
-  padding: 2px 14px 6px;
+  padding: 8px 14px;
+  border-bottom: 0.5px solid rgba(255,255,255,0.07);
 }
-.rtfc-part-icon { font-size: 11px; opacity: 0.7; }
+.rtfc-part-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #9a9a9a;
+  margin-right: 2px;
+}
 .rtfc-part-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   font-weight: 600;
   color: #c7d2fe;
   background: rgba(165,180,252,0.14);
   border: 0.5px solid rgba(165,180,252,0.3);
   border-radius: 10px;
-  padding: 2px 8px;
+  padding: 2px 4px 2px 8px;
 }
+.rtfc-part-name { cursor: pointer; }
+.rtfc-part-name:hover { text-decoration: underline; }
+.rtfc-part-del {
+  background: none;
+  border: none;
+  color: #c7d2fe;
+  cursor: pointer;
+  font-size: 9px;
+  padding: 0 2px;
+  opacity: 0.6;
+}
+.rtfc-part-del:hover { opacity: 1; color: #f87171; }
 .rtfc-part-input {
   flex: 1;
   min-width: 70px;
