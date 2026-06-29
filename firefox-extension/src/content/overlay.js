@@ -735,13 +735,15 @@ function buildKeyPointCard(kp) {
     '<p class="rtfc-kp-point">' + escapeHtml(kp.point) + '</p>',
     quoteHTML,
     '<div class="rtfc-kp-actions">',
-      '<button class="rtfc-verify-btn">✓ Verificar</button>',
+      // Verification needs live web search, which doesn't work on the Groq free tier
+      // (returns 413). Disabled for now; re-enable when a search-capable provider is set.
+      '<button class="rtfc-verify-btn" disabled title="Verificación no disponible por ahora: la búsqueda web no funciona en el plan gratuito de Groq">✓ Verificar</button>',
       '<button class="rtfc-discard-btn" title="No relevante — descartar y aprender">👎</button>',
     '</div>',
   ].join('');
 
   const btn = card.querySelector('.rtfc-verify-btn');
-  if (btn) btn.addEventListener('click', () => {
+  if (btn && !btn.disabled) btn.addEventListener('click', () => {
     btn.disabled = true;
     btn.textContent = '⟳ Verificando…';
     browser.runtime.sendMessage({

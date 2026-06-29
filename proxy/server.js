@@ -112,9 +112,12 @@ async function handleGemini(body) {
 
 async function handleGroq(body) {
   const { max_tokens, temperature, system, messages, grounded, json } = body;
-  // 'groq/compound' has built-in web search (free tier); use it only when grounding
-  // is requested (verification). Otherwise a fast normal model for the frequent calls.
-  // (The old 'compound-beta' id was retired and now returns a misleading 413.)
+  // NOTE: Groq's web search does NOT work on the FREE tier. When a compound model
+  // actually searches, it injects page content into the request and exceeds the
+  // free-tier per-request token limit → 413 request_too_large (confirmed for
+  // compound-beta, groq/compound AND groq/compound-mini). So grounded verification is
+  // currently DISABLED client-side; this path is only reachable on a paid tier.
+  // 'groq/compound' is kept as the correct current id for that case.
   const model = grounded ? 'groq/compound' : 'llama-3.3-70b-versatile';
 
   const groqMessages = [];
