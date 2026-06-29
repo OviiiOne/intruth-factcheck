@@ -52,7 +52,9 @@ Return ONLY a JSON array. No markdown, no explanation outside the array.`;
 
 const KEYPOINTS_PROMPT = `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
 
-Be SELECTIVE — extract only what a journalist would jot down: real announcements, figures, commitments, named decisions, and significant claims (including geopolitical ones like "Iran will not have a nuclear weapon", even if repeated). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. ALSO skip personal praise, compliments and mutual flattery between officials (e.g. one leader calling another "a great guy / the best Secretary General"), greetings, and procedural remarks ("any questions?"). Most excerpts have only 0–1 key points; often none. Quality over quantity — do NOT turn every sentence into a key point.
+Be EXTREMELY SELECTIVE — extract only what a journalist would put in a headline or jot down to quote later: a real announcement, a hard figure/statistic, a concrete commitment or promise, a named decision, or a significant claim (including geopolitical ones like "Iran will not have a nuclear weapon"). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. ALSO skip personal praise, compliments and mutual flattery between officials (e.g. one leader calling another "a great guy / the best Secretary General"), greetings, and procedural remarks ("any questions?").
+
+Return AT MOST ONE key point for this excerpt — the single most newsworthy item — and return NONE unless it clearly clears that bar. The DEFAULT answer is none: most excerpts produce {"points": []}. When in doubt, omit. Do NOT turn every sentence into a key point; restating the same idea in different words is NOT a new key point.
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 
@@ -75,12 +77,13 @@ Return ONLY a JSON object (no array, no markdown) with:
 
 No text outside the JSON object.`;
 
-const SUMMARY_PROMPT = `You are summarizing a live press conference for a Spanish-speaking professional. Using the key points (and any transcript) the user provides, write a clear, structured summary IN SPANISH, in PLAIN TEXT (no Markdown symbols like # or *).
+const SUMMARY_PROMPT = `You are summarizing a live press conference for a Spanish-speaking professional. The user gives you the key points (and maybe a transcript). Write a TRUE NARRATIVE SUMMARY in SPANISH, in PLAIN TEXT (no Markdown symbols like # or *).
 
-Format:
-- Start with a short overview paragraph (2-3 sentences).
-- Then a blank line, then the main points, each on its own line starting with "• ", attributed to the speaker when known.
-- ONLY if the input explicitly marks points as "[Verificado: ...]", add a final short section with those verdicts. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
+CRITICAL: the key points are ALREADY listed separately in the report, so do NOT repeat them. This must be a SYNTHESIS in flowing prose — NOT a list. Absolutely NO bullet points, NO "• ", NO enumerating the points one by one. Instead, weave them into 2–4 connected paragraphs that explain what the event was about, who said what, the main lines of argument, the most significant decisions/figures/positions, and the overall takeaway. Group related points, drop repetition, and connect ideas with prose.
+
+Think of it as the opening paragraphs a journalist writes ABOVE the bullet list of facts: it should add understanding and context, not duplicate the list.
+
+ONLY if the input explicitly marks points as "[Verificado: ...]", you may add at the end a short "Verificaciones:" paragraph mentioning those verdicts in prose. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
 
 Be concise and neutral. Report only what was said; do not assess truth yourself. Return only the summary text.`;
 
@@ -300,7 +303,7 @@ function isDuplicate(claim) {
 
 // ── Rolling window ────────────────────────────────────────────────────────────
 
-const WINDOW_SIZE = 4;
+const WINDOW_SIZE = 6;
 const WINDOW_KEEP = 15;
 
 let sentenceWindow = [];
@@ -546,8 +549,12 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     )).text;
     const obj = parseObject(raw);
     const results = (obj && Array.isArray(obj.points)) ? obj.points : parseArray(raw);
-    const valid = results.filter(r => r.point && !isDuplicate(r.point));
-    if (!valid.length) return;
+    // Hard cap: keep at most the single most newsworthy point per excerpt, even if
+    // the model returns several — the prompt asks for ≤1, this guards against drift.
+    // .find (not filter) so only the point we keep is registered as "seen".
+    const candidate = results.find(r => r.point && !isDuplicate(r.point));
+    if (!candidate) return;
+    const valid = [candidate];
 
     if (activeTabId) {
       sendToTab(activeTabId, {
@@ -591,15 +598,21 @@ async function verifyKeyPoint(id, claim, quote) {
     const dateCtx = pageDate ? `\nDate: ${pageDate}` : '';
     const titleCtx = pageTitle ? `Event: "${pageTitle}"${dateCtx}\n\n` : '';
     const quoteCtx = (quote && quote.trim()) ? `\nOriginal quote: "${quote}"` : '';
+    const userMsg = `${titleCtx}Evaluate ONLY this claim:\n${claim}${quoteCtx}`;
 
-    // grounded=true → the proxy enables Gemini's native Google Search; the answer
-    // comes back with real sources (no Serper needed).
-    const { text, sources } = await callClaude(
-      `${titleCtx}Evaluate ONLY this claim:\n${claim}${quoteCtx}`,
-      VERIFY_PROMPT,
-      true
-    );
-    const result = parseObject(text);
+    // Verification ALWAYS uses live web search (grounded) — a verdict from the model's
+    // own (possibly stale) knowledge is worse than none for a fact-checking tool, so
+    // there is NO ungrounded fallback. Run it SILENT and retry once if the search model
+    // errors transiently (e.g. Groq compound 413); if it still fails, we return no
+    // verdict and the card shows "No se pudo verificar."
+    let { text, sources } = await callClaude(userMsg, VERIFY_PROMPT, true, 768, false, true);
+    let result = parseObject(text);
+    if (!result || !result.verdict) {
+      const retry = await callClaude(userMsg, VERIFY_PROMPT, true, 768, false, true);
+      result = parseObject(retry.text);
+      sources = retry.sources;
+    }
+
     if (activeTabId) {
       sendToTab(activeTabId, {
         type: 'KEYPOINT_VERDICT',
@@ -617,7 +630,7 @@ async function verifyKeyPoint(id, claim, quote) {
 
 async function summarizeSession(input) {
   try {
-    const { text } = await callClaude(input, SUMMARY_PROMPT, false, 1536);
+    const { text } = await callClaude(input, SUMMARY_PROMPT, false, 2048);
     if (activeTabId) sendToTab(activeTabId, { type: 'SUMMARY_RESULT', text: text || '' });
   } catch (err) {
     console.error('[summary] error:', err);

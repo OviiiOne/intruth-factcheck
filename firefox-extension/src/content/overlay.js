@@ -368,6 +368,7 @@ function createPanel() {
   setupInterestingButton();
   renderParticipantsBar();
   makeDraggable(panel);
+  makeResizable(panel);
 
   panel.querySelector('#rtfc-transcript-toggle').addEventListener('click', () => {
     transcriptCollapsed = !transcriptCollapsed;
@@ -417,6 +418,16 @@ let lastTranscriptSpeaker = null;
 
 function addTranscriptLine(timecode, text, translation, speaker) {
   if (!transcriptFeedEl) return;
+  // Only auto-scroll to the newest line if the user is already at the bottom AND
+  // isn't selecting text here. Otherwise leave the view where it is, so they can
+  // scroll up and select older lines (to ⭐ mark them) without it jumping away.
+  const distanceFromBottom =
+    transcriptFeedEl.scrollHeight - transcriptFeedEl.scrollTop - transcriptFeedEl.clientHeight;
+  const atBottom = distanceFromBottom < 28;
+  const sel = window.getSelection();
+  const selectingHere = sel && !sel.isCollapsed && sel.anchorNode &&
+    transcriptFeedEl.contains(sel.anchorNode);
+  const shouldStick = atBottom && !selectingHere;
   // Show the speaker name at the start and whenever it changes.
   if (speaker && speaker !== lastTranscriptSpeaker) {
     lastTranscriptSpeaker = speaker;
@@ -439,7 +450,7 @@ function addTranscriptLine(timecode, text, translation, speaker) {
     line.appendChild(tr);
   }
   transcriptFeedEl.appendChild(line);
-  transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
+  if (shouldStick) transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
 }
 
 function updateInterim(text) {
@@ -767,7 +778,17 @@ function applyKeyPointVerdict(id, result) {
   const actions = card.querySelector('.rtfc-kp-actions');
 
   if (!result || !result.verdict) {
-    if (actions) actions.innerHTML = '<span class="rtfc-kp-noverdict">No se pudo verificar.</span>';
+    // Re-enable the button so the user can retry, and show the reason beside it
+    // (don't destroy the actions, or there'd be nothing left to click).
+    const btn = card.querySelector('.rtfc-verify-btn');
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Verificar'; }
+    let note = card.querySelector('.rtfc-kp-noverdict');
+    if (!note) {
+      note = document.createElement('span');
+      note.className = 'rtfc-kp-noverdict';
+      if (actions) actions.insertAdjacentElement('afterend', note); else card.appendChild(note);
+    }
+    note.textContent = 'No se pudo verificar (búsqueda web no disponible). Inténtalo de nuevo.';
     return;
   }
 
@@ -957,6 +978,37 @@ function makeDraggable(panel) {
     panel.style.top   = Math.max(0, startTop  + e.clientY - startY) + 'px';
   });
   document.addEventListener('mouseup', () => { isDragging = false; header.style.cursor = 'grab'; });
+}
+
+// Drag the bottom-right corner to resize the panel in both directions.
+function makeResizable(panel) {
+  const handle = document.createElement('div');
+  handle.id = 'rtfc-resize';
+  handle.title = 'Arrastra para redimensionar';
+  panel.appendChild(handle);
+
+  let isResizing = false, startX, startY, startW, startH;
+  handle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    const rect = panel.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    startW = rect.width; startH = rect.height;
+    // Pin the panel by its top-left and lift the height cap so it can grow freely.
+    panel.style.right = 'unset';
+    panel.style.left = rect.left + 'px';
+    panel.style.top = rect.top + 'px';
+    panel.style.maxHeight = 'none';
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const w = Math.max(260, Math.min(startW + e.clientX - startX, window.innerWidth - 20));
+    const h = Math.max(220, Math.min(startH + e.clientY - startY, window.innerHeight - 20));
+    panel.style.width  = w + 'px';
+    panel.style.height = h + 'px';
+  });
+  document.addEventListener('mouseup', () => { isResizing = false; });
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────

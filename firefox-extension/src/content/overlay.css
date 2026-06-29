@@ -5,7 +5,10 @@
   top: 72px;
   right: 16px;
   width: 320px;
-  max-height: 620px;
+  max-height: 90vh;
+  min-width: 260px;
+  min-height: 220px;
+  max-width: 92vw;
   background: rgba(15, 15, 15, 0.88);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -204,7 +207,7 @@
 }
 
 #rtfc-transcript-feed {
-  max-height: 100px;
+  max-height: 150px;
   overflow-y: auto;
   padding: 4px 14px;
   font-size: 11.5px;
@@ -817,3 +820,24 @@
   color: #cbd5e1;
 }
 .rtfc-error-toast--info .rtfc-error-close { color: #cbd5e1; }
+
+/* ── Resize handle (bottom-right corner) ── */
+
+#rtfc-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 2;
+  /* two diagonal lines as a grip, in the panel's muted style */
+  background:
+    linear-gradient(135deg, transparent 0 8px, rgba(255,255,255,0.30) 8px 10px, transparent 10px) no-repeat,
+    linear-gradient(135deg, transparent 0 12px, rgba(255,255,255,0.30) 12px 14px, transparent 14px) no-repeat;
+}
+#rtfc-resize:hover {
+  background:
+    linear-gradient(135deg, transparent 0 8px, rgba(255,255,255,0.55) 8px 10px, transparent 10px) no-repeat,
+    linear-gradient(135deg, transparent 0 12px, rgba(255,255,255,0.55) 12px 14px, transparent 14px) no-repeat;
+}

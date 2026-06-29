@@ -112,9 +112,10 @@ async function handleGemini(body) {
 
 async function handleGroq(body) {
   const { max_tokens, temperature, system, messages, grounded, json } = body;
-  // 'compound-beta' has built-in web search (free tier); use it only when grounding
+  // 'groq/compound' has built-in web search (free tier); use it only when grounding
   // is requested (verification). Otherwise a fast normal model for the frequent calls.
-  const model = grounded ? 'compound-beta' : 'llama-3.3-70b-versatile';
+  // (The old 'compound-beta' id was retired and now returns a misleading 413.)
+  const model = grounded ? 'groq/compound' : 'llama-3.3-70b-versatile';
 
   const groqMessages = [];
   if (system) groqMessages.push({ role: 'system', content: system });
