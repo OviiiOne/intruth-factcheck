@@ -1,7 +1,8 @@
 // session-export.js
-// Handles session logging and PDF export.
-// Loaded after overlay.js — exposes logVerdict(), startSession(), stopSession(), exportPDF() as globals.
-// Reuses escapeHtml() defined in overlay.js (loaded first in manifest.json).
+// Handles session logging and HTML-report export.
+// Loaded BEFORE overlay.js (see manifest) in the same shared content-script scope:
+// exposes logVerdict(), startSession(), stopSession(), exportPDF() as globals for
+// overlay.js, and uses overlay.js's escapeHtml() (available by the time these run).
 
 const sessionLog = [];
 const transcriptLog = [];

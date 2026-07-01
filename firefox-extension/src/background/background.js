@@ -35,12 +35,23 @@ async function loadKeys() {
   FEEDBACK_SINCE_DISTILL = Number.isInteger(data.feedbackSinceDistill) ? data.feedbackSinceDistill : 0;
 }
 
-// Keep LEARNED_RULES in sync when the user edits them in the popup while the
-// background is already loaded (loadKeys only runs on start).
+// Keep the learning/prompt state in sync when it changes outside this script —
+// the user editing rules in the popup, or restoring a backup, possibly mid-session
+// (loadKeys only runs on start). Our own writes also land here; reassigning the
+// same values is harmless.
 browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.feedbackRules) {
     LEARNED_RULES = Array.isArray(changes.feedbackRules.newValue) ? changes.feedbackRules.newValue : [];
+  }
+  if (changes.feedbackNegative) {
+    NEG_EXAMPLES = Array.isArray(changes.feedbackNegative.newValue) ? changes.feedbackNegative.newValue : [];
+  }
+  if (changes.feedbackPositive) {
+    POS_EXAMPLES = Array.isArray(changes.feedbackPositive.newValue) ? changes.feedbackPositive.newValue : [];
+  }
+  if (changes.participants && typeof changes.participants.newValue === 'string') {
+    PARTICIPANTS = changes.participants.newValue;
   }
 });
 

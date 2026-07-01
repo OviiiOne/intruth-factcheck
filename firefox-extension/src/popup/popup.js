@@ -186,8 +186,10 @@ importBackupFile.addEventListener('change', async () => {
       if (Array.isArray(v)) clean[key] = v.map(s => String(s).trim()).filter(Boolean);
     } else if (key === 'feedbackSinceDistill') {
       if (Number.isInteger(v) && v >= 0) clean[key] = v;
-    } else {
-      if (typeof v === 'string') clean[key] = v.trim();
+    } else if (typeof v === 'string') {
+      const s = v.trim();
+      // An empty value in the file must never wipe an existing credential here.
+      if (s || !BACKUP_CRED_KEYS.includes(key)) clean[key] = s;
     }
   }
   if (!Object.keys(clean).length) {
