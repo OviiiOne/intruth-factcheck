@@ -88,6 +88,20 @@
       </div>
       <div class="gladia-hint">La IA convierte tus 👎 (descartar) y ⭐ (interesante) en reglas fijas que aplica siempre al elegir puntos clave. Una regla por línea: puedes editarlas, añadir nuevas o borrar las que no te convenzan.</div>
 
+      <div class="key-field">
+        <label class="key-label">Copia de seguridad</label>
+        <div class="backup-btns">
+          <button class="backup-btn" id="exportBackupBtn">↓ Exportar</button>
+          <button class="backup-btn" id="importBackupBtn">↑ Importar</button>
+          <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none"/>
+        </div>
+        <label class="backup-check">
+          <input type="checkbox" id="backupIncludeCreds" checked/>
+          Incluir credenciales (URL y token del proxy, claves API)
+        </label>
+      </div>
+      <div class="gladia-hint">Guarda o restaura en un archivo los ajustes, participantes y todo lo aprendido (👎/⭐ y reglas). Con la casilla marcada incluye también las credenciales: guarda ese archivo en un sitio privado.</div>
+
       <div class="key-hint" id="keyHint"></div>
     </div>
 

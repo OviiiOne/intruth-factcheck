@@ -122,6 +122,84 @@ function updateHint() {
   }
 }
 
+// ── Backup export / import ────────────────────────────────────────────────────
+
+// What a backup may contain. Credentials only go in when the checkbox is ticked,
+// and on import a file is never trusted: only these keys, type-checked, are applied.
+const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill'];
+const BACKUP_CRED_KEYS = ['proxyUrl', 'proxyToken', 'gladiaKey', 'anthropicKey'];
+
+const exportBackupBtn = document.getElementById('exportBackupBtn');
+const importBackupBtn = document.getElementById('importBackupBtn');
+const importBackupFile = document.getElementById('importBackupFile');
+const backupIncludeCreds = document.getElementById('backupIncludeCreds');
+
+function backupHint(text, ok) {
+  keyHint.textContent = text;
+  keyHint.className = 'key-hint ' + (ok ? 'ok' : 'error');
+}
+
+exportBackupBtn.addEventListener('click', async () => {
+  const keys = backupIncludeCreds.checked
+    ? [...BACKUP_SETTINGS_KEYS, ...BACKUP_CRED_KEYS]
+    : BACKUP_SETTINGS_KEYS;
+  const data = await browser.storage.local.get(keys);
+  const payload = {
+    app: 'intruth-backup',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    includesCredentials: backupIncludeCreds.checked,
+    data,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'intruth-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  backupHint(backupIncludeCreds.checked
+    ? 'Copia exportada (CON credenciales — guárdala en un sitio privado).'
+    : 'Copia exportada (sin credenciales).', true);
+});
+
+importBackupBtn.addEventListener('click', () => importBackupFile.click());
+
+importBackupFile.addEventListener('change', async () => {
+  const file = importBackupFile.files && importBackupFile.files[0];
+  importBackupFile.value = '';
+  if (!file) return;
+  let payload;
+  try { payload = JSON.parse(await file.text()); }
+  catch { backupHint('El archivo no es un JSON válido.', false); return; }
+  if (!payload || payload.app !== 'intruth-backup' || typeof payload.data !== 'object' || payload.data === null) {
+    backupHint('El archivo no parece una copia de InTruth.', false);
+    return;
+  }
+  const clean = {};
+  for (const key of [...BACKUP_SETTINGS_KEYS, ...BACKUP_CRED_KEYS]) {
+    if (!(key in payload.data)) continue;
+    const v = payload.data[key];
+    if (key === 'feedbackNegative' || key === 'feedbackPositive' || key === 'feedbackRules') {
+      if (Array.isArray(v)) clean[key] = v.map(s => String(s).trim()).filter(Boolean);
+    } else if (key === 'feedbackSinceDistill') {
+      if (Number.isInteger(v) && v >= 0) clean[key] = v;
+    } else {
+      if (typeof v === 'string') clean[key] = v.trim();
+    }
+  }
+  if (!Object.keys(clean).length) {
+    backupHint('La copia no contiene datos reconocibles.', false);
+    return;
+  }
+  await browser.storage.local.set(clean);
+  // Reload so every field shows the restored values (background picks up rule edits
+  // via storage.onChanged; the rest is read on the next Start).
+  window.location.reload();
+});
+
 // ── Status ────────────────────────────────────────────────────────────────────
 
 browser.runtime.sendMessage({ type: 'GET_STATUS' }).then(res => {
