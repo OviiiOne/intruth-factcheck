@@ -1,122 +1,70 @@
-# intruth
+# InTruth — press-conference companion (Firefox fork)
 
-hi everyone!
+> **This is a fork.** The original project is
+> [rpanigrahi222/intruth-factcheck](https://github.com/rpanigrahi222/intruth-factcheck),
+> a real-time fact-checking Chrome extension. All credit for the original idea and
+> implementation goes to its author. This fork adapts it into a personal
+> **press-conference companion for Firefox**, and that is where all new development
+> happens (`firefox-extension/`).
 
-https://chromewebstore.google.com/detail/InTruth/ikmpglbpcdoapfelcbfpoaddmhmaaocg?hl=en&authuser=0
+## What this fork does
 
-built a real-time factchecker called intruth for live debates, speeches, interviews, press conferences, and political events!
+Follow a live press conference (or speech, debate, interview) playing in a browser
+tab and, in real time:
 
+- **Transcribe** the audio — Gladia real-time API (14 languages + auto-detect) or a
+  local Whisper model as fallback (no key needed).
+- **Translate** everything except Spanish/English into Spanish, line by line.
+- **Extract neutral key points** — announcements, figures, commitments, notable
+  quotes, geopolitical positions — written in Spanish, attributed to the
+  participants you define. No verdicts, no interpretation: just what was said.
+- **Learn from your feedback** — 👎 discards a point (and teaches it to avoid similar
+  ones), ⭐ on selected transcript text adds a missed point (and teaches it to look
+  for more). Every few feedbacks the examples are auto-distilled into a short list of
+  editable rules ("Reglas aprendidas" in the popup) that are applied every time.
+- **Summarize on demand** — a narrative summary in Spanish, plus a full session
+  export (transcript with timecodes, key points, summary) as an HTML report.
+- **Verify on demand** — per-key-point web-grounded verification. *Currently
+  disabled:* web search is not usable on Groq's free tier; the code path is kept for
+  when a search-capable provider is configured.
 
-<img width="400" height="225" alt="image" src="https://github.com/user-attachments/assets/a0a8fba9-c28f-473c-866d-84951a9b548e" />
+## Main differences from the original
 
-it listens to audio from the active browser tab, identifies factual claims as they are made, and provides instant evidence-based verdicts using AI analysis and web research; most fact-checking docs come out days after debates, but now users can evaluate claims as they're made.
+| | Original (Chrome) | This fork (Firefox) |
+|---|---|---|
+| Browser | Chrome MV3 | Firefox MV2, loads as a temporary add-on |
+| Audio | `tabCapture` | The page's own `<video>/<audio>` element — including players inside cross-origin iframes (e.g. Vimeo embeds) — or a system loopback input device. No installs required. |
+| Output | Instant TRUE/FALSE-style verdicts per claim | Neutral key points in Spanish; verification only on demand |
+| Languages | English | 14 languages + auto-detect, auto-translation to Spanish |
+| AI providers | Anthropic key in the browser | Groq (free, default) / Gemini / Claude behind a small proxy (`proxy/`, deployable on Railway) so no API key ever lives in the browser; access gated by a shared token |
+| Personalization | — | Feedback learning (examples + auto-distilled editable rules), participants bar, draggable/resizable panel |
 
-this is part of a bigger research project so more to come!
+## Repository layout
 
-## features
+- `firefox-extension/` — the fork's extension (active development)
+- `proxy/` — minimal proxy that keeps all API keys server-side (Railway)
+- `realtime-factcheck/` — the original Chrome extension, kept for reference
 
-- live claim detection: continuously monitors speech from the active tab and identifies check-worthy factual claims in real time
+## Running the Firefox extension
 
-- live claim evaluation: analyzes claim veracity using large language models and external sources to determine whether a statement is:
+1. Open `about:debugging` → *This Firefox* → *Load Temporary Add-on…* and pick
+   `firefox-extension/manifest.json`.
+2. In the extension popup choose **Proxy** mode and set the proxy URL + token
+   (or provide your own API keys directly), the source language and, optionally,
+   the participants.
+3. Open the page with the video, **press play (unmuted)**, then hit *Start*.
 
-* TRUE
-* SUBSTANTIALLY TRUE
-* FALSE
-* MISLEADING
-* UNVERIFIABLE
+Settings and learned rules persist across restarts (fixed add-on id), even as a
+temporary add-on.
 
-- speaker attribution: tracks speakers throughout a discussion and attributes claims to the correct participant whenever possible
+## Limitations
 
-- context analysis: uses surrounding conversation and event context to improve claim identification and reduce false positives
+Transcription and key-point extraction are AI-based and imperfect: expect occasional
+misheard names, missed points or clumsy phrasing. Nothing is ever presented as
+fact-checked unless an explicit verification ran and is marked as such. Transcript
+text is sent to the transcription/AI providers you configure — bring your own keys,
+nothing is collected by this repo.
 
-- real-time verdicts: veracity checks and sources appear while the debate or interview is still in progress
+## License
 
-- bring-your-own-key: users provide their own anthropic API key
-
-## how to use intruth:
-
-1. open a video, livestream, debate, interview, or speech.
-2. start the extension, and assign speakers w/ the press of a button
-3. audio from the active tab is captured
-4. speech transcribed 
-5. check-worthy, factual claims are extracted
-6. claims evaluated against authoritative sources
-7. verdicts, explanations are displayed to the user!!!
-
-## what's check-worthy?? 
-
-check-worthy claims in this context are:
-
-* specific factual statements
-* statistics and numerical claims
-* historical events
-* government actions and policies
-* scientific and medical claims
-* public records and documented events
-
-i.e. 
-* "inflation peaked at 9.1% in 2022."
-* "the bill passed the Senate in 2021."
-* "the unemployment rate is currently below 5%."
-
-NOT:
-* opinions
-* predictions / future promises
-* rhetorical questions
-* value judgments
-* subjective descriptions
-
-i.e.
-* "This policy will destroy the economy."
-* "I have the best plan."
-* "If my opponent wins, disaster will follow."
-
-## privacy details
-
-users provide their own API credentials, i have no access to that
-
-transcript data may be sent directly to the AI service configured by the user in order to generate fact-check results
-
-see privacy policy on web store for complete details!
-
-## permissions
-
-tabcapture: extracts audio from the active browser tab after the user explicitly starts a fact-checking session.
-
-activetab: allows the extension to interact with the currently selected tab
-
-scripting: injects the fact-checking interface into supported pages.
-
-storage: stores user preferences and API configuration LOCALLY
-
-offscreen: supports background audio processing and transcription workflows.
-
-## limitations and warnings
-
-fact-checking is inherently imperfect! generated verdicts may occasionally be incorrect, incomplete, or based on outdated information. if you're unsure about something, independently evaluate it and consult original sources when making decisions!
-
-this extension is as an informational tool and NOT a definitive authority !
-
-### requirements
-
-* Chrome Manifest V3
-* User-provided AI API key
-* Modern Chromium-based browser
-
-### recipe
-
-1. clone repo
-2. open Chrome Extensions
-3. enable Developer Mode
-4. load unpacked
-5. choose project dir
-6. configure your anthropic API key
-7. press startttt
-
-## Contributing
-
-would love advice, any features you'd like, and any edge cases you've found! haiku can be overly pedantic so i expect many ....
-
-## license
-
-MIT License
+MIT (same as the original project).
