@@ -6,6 +6,7 @@ const proxyTokenEl = document.getElementById('proxyToken');
 const gladiaEl = document.getElementById('gladiaKey');
 const sourceLanguageEl = document.getElementById('sourceLanguage');
 const participantsEl = document.getElementById('participants');
+const feedbackRulesEl = document.getElementById('feedbackRules');
 const keyHint = document.getElementById('keyHint');
 const keysSection = document.getElementById('keysSection');
 const modeApiKeyBtn = document.getElementById('modeApiKey');
@@ -37,13 +38,14 @@ provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider', 'feedbackRules']).then(data => {
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
   if (data.proxyToken) { proxyTokenEl.value = data.proxyToken; proxyTokenEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
   if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
   if (data.participants) participantsEl.value = data.participants;
+  if (Array.isArray(data.feedbackRules)) feedbackRulesEl.value = data.feedbackRules.join('\n');
   if (data.connectionMode === 'proxy') switchMode('proxy');
   switchProvider(data.aiProvider || 'groq');
   updateHint();
@@ -55,6 +57,12 @@ sourceLanguageEl.addEventListener('change', () => {
 
 participantsEl.addEventListener('change', () => {
   browser.storage.local.set({ participants: participantsEl.value.trim() });
+});
+
+// Learned rules: one per line; the background picks up edits via storage.onChanged.
+feedbackRulesEl.addEventListener('change', () => {
+  const rules = feedbackRulesEl.value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 12);
+  browser.storage.local.set({ feedbackRules: rules });
 });
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────

@@ -14,8 +14,15 @@ const SERPER_KEY = '';
 let NEG_EXAMPLES = []; // "not relevant" — avoid extracting things like these
 let POS_EXAMPLES = []; // "interesting" — prioritise things like these
 
+// User feedback (hard learning): imperative rules distilled from the examples by the
+// LLM every few feedback events. Injected into the key-point prompt as strict rules,
+// user-editable in the popup ("Reglas aprendidas").
+let LEARNED_RULES = [];
+let FEEDBACK_SINCE_DISTILL = 0;
+const DISTILL_EVERY = 5; // distil after this many new feedback examples
+
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
@@ -24,16 +31,68 @@ async function loadKeys() {
   PARTICIPANTS = data.participants || '';
   NEG_EXAMPLES = Array.isArray(data.feedbackNegative) ? data.feedbackNegative : [];
   POS_EXAMPLES = Array.isArray(data.feedbackPositive) ? data.feedbackPositive : [];
+  LEARNED_RULES = Array.isArray(data.feedbackRules) ? data.feedbackRules : [];
+  FEEDBACK_SINCE_DISTILL = Number.isInteger(data.feedbackSinceDistill) ? data.feedbackSinceDistill : 0;
 }
 
+// Keep LEARNED_RULES in sync when the user edits them in the popup while the
+// background is already loaded (loadKeys only runs on start).
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.feedbackRules) {
+    LEARNED_RULES = Array.isArray(changes.feedbackRules.newValue) ? changes.feedbackRules.newValue : [];
+  }
+});
+
 // Store a feedback example (deduped, capped) and persist it across sessions.
+// Every DISTILL_EVERY new examples, distil the accumulated feedback into rules.
 function addFeedback(kind, text) {
   const t = (text || '').trim();
   if (!t) return;
   const arr = kind === 'neg' ? NEG_EXAMPLES : POS_EXAMPLES;
-  if (!arr.includes(t)) arr.push(t);
+  if (arr.includes(t)) return;
+  arr.push(t);
   while (arr.length > 15) arr.shift();
-  browser.storage.local.set({ feedbackNegative: NEG_EXAMPLES, feedbackPositive: POS_EXAMPLES });
+  FEEDBACK_SINCE_DISTILL++;
+  const shouldDistill = FEEDBACK_SINCE_DISTILL >= DISTILL_EVERY;
+  if (shouldDistill) FEEDBACK_SINCE_DISTILL = 0;
+  browser.storage.local.set({ feedbackNegative: NEG_EXAMPLES, feedbackPositive: POS_EXAMPLES, feedbackSinceDistill: FEEDBACK_SINCE_DISTILL });
+  if (shouldDistill) distillRules();
+}
+
+// Distil the 👎/⭐ examples into a short list of imperative rules (in Spanish, so the
+// user can read/edit them in the popup). Silent: a failed distillation just leaves the
+// previous rules in place.
+let distillInFlight = false;
+
+async function distillRules() {
+  if (distillInFlight) return;
+  if (NEG_EXAMPLES.length + POS_EXAMPLES.length < 3) return;
+  distillInFlight = true;
+  try {
+    const input = [
+      NEG_EXAMPLES.length ? `Marked NOT relevant by the user (discarded):\n- ${NEG_EXAMPLES.join('\n- ')}` : '',
+      POS_EXAMPLES.length ? `Marked IMPORTANT by the user:\n- ${POS_EXAMPLES.join('\n- ')}` : '',
+      LEARNED_RULES.length ? `Current rules:\n- ${LEARNED_RULES.join('\n- ')}` : '',
+    ].filter(Boolean).join('\n\n');
+    const raw = (await callClaude(input, DISTILL_PROMPT, false, 1024, true, true)).text;
+    const obj = parseObject(raw);
+    if (obj && Array.isArray(obj.rules)) {
+      const rules = obj.rules
+        .map(r => String(r).trim())
+        .filter(r => r && r.length <= 200)
+        .slice(0, 8);
+      if (rules.length) {
+        LEARNED_RULES = rules;
+        browser.storage.local.set({ feedbackRules: LEARNED_RULES });
+        console.log('[rules] distilled', rules.length, 'rules from feedback');
+      }
+    }
+  } catch (err) {
+    console.error('[rules] distill error:', err);
+  } finally {
+    distillInFlight = false;
+  }
 }
 
 const EVALUATE_PROMPT = `You are a real-time fact-checker. Given a transcript excerpt, identify check-worthy factual claims and evaluate each one.
@@ -86,6 +145,17 @@ Think of it as the opening paragraphs a journalist writes ABOVE the bullet list 
 ONLY if the input explicitly marks points as "[Verificado: ...]", you may add at the end a short "Verificaciones:" paragraph mentioning those verdicts in prose. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
 
 Be concise and neutral. Report only what was said; do not assess truth yourself. Return only the summary text.`;
+
+const DISTILL_PROMPT = `You maintain a SHORT list of editorial rules for extracting key points from live press conferences. The rules are learned from user feedback: examples the user discarded as NOT relevant, examples the user marked as IMPORTANT, and the current rule list.
+
+Produce an UPDATED list of AT MOST 8 rules, each ONE short imperative sentence IN SPANISH (e.g. "Nunca extraigas halagos personales entre dirigentes", "Captura siempre cifras de gasto militar").
+
+- GENERALISE the pattern behind the examples; do not just restate a single example.
+- Keep current rules that are still supported by the examples; merge near-duplicates; drop rules the examples now contradict.
+- Only write a rule when the examples give clear evidence for it — fewer good rules beat many weak ones.
+- Rules must be about WHAT to extract or skip (content criteria), never about formatting or truthfulness.
+
+Return ONLY a JSON object of the form {"rules": ["...", "..."]} — no markdown, no text outside the JSON.`;
 
 const MANUAL_KEYPOINT_PROMPT = `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in SPANISH>", "category": "<one of ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA, or a short Spanish label>", "quote": "<the fragment in its original language>", "speaker": null}. No text outside the JSON.`;
 
@@ -535,6 +605,9 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     const alreadyNoted = notedList ? `\n\nAlready noted — do NOT repeat:\n- ${notedList}\n` : '';
 
     let feedbackCtx = '';
+    if (LEARNED_RULES.length) {
+      feedbackCtx += `\n\nSTRICT USER RULES — always apply these when deciding what to extract or skip (they override the general guidance; they are written in Spanish):\n- ${LEARNED_RULES.join('\n- ')}`;
+    }
     if (NEG_EXAMPLES.length) {
       feedbackCtx += `\n\nThe user marked these as NOT relevant — do NOT extract anything like them:\n- ${NEG_EXAMPLES.slice(-15).join('\n- ')}`;
     }
@@ -642,6 +715,11 @@ async function summarizeSession(input) {
 
 let activeTabId = null;
 let isCapturing = false;
+
+// With all_frames the content scripts run in every frame (so we can reach players
+// inside cross-origin iframes, e.g. Vimeo embeds). Only ONE frame may capture audio:
+// frames that find a media element ask for this slot and the first one wins.
+let captureClaimedBy = null; // frameId of the frame that captures, or null
 
 function sendToTab(tabId, msg) {
   browser.tabs.sendMessage(tabId, msg).catch(() => {});
@@ -756,6 +834,14 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       if (activeTabId) sendToTab(activeTabId, { type: 'CAPTURE_READY' });
       return Promise.resolve();
 
+    case 'CLAIM_CAPTURE': {
+      if (captureClaimedBy !== null) return Promise.resolve({ granted: false });
+      captureClaimedBy = sender && sender.frameId !== undefined ? sender.frameId : 0;
+      // Tell every frame the slot is taken, so the top frame cancels its fallback.
+      if (activeTabId) sendToTab(activeTabId, { type: 'CAPTURE_CLAIMED' });
+      return Promise.resolve({ granted: true });
+    }
+
     case 'VERIFY_KEYPOINT':
       verifyKeyPoint(msg.id, msg.claim, msg.quote);
       return Promise.resolve();
@@ -835,6 +921,7 @@ async function startFactCheck() {
   isCapturing = true;
   resetWindow();
   recentClaims.clear();
+  captureClaimedBy = null;
 
   await sendToTab(activeTabId, { type: 'START_FACTCHECK' });
   return { ok: true };
@@ -845,6 +932,7 @@ function stopFactCheck() {
   recentClaims.clear();
   pageTitle = '';
   pageDate = '';
+  captureClaimedBy = null;
 
   if (!isCapturing) return;
 

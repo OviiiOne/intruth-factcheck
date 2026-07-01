@@ -3,6 +3,11 @@
 // Gladia: real-time via WebSocket, best quality + diarization
 // Whisper: local model via transformers.js, no API key needed, ~75MB download once
 
+// With all_frames the content scripts run in EVERY frame of the page. The top frame
+// owns the UI (overlay.js checks this same constant); audio capture runs in whichever
+// frame actually has the media element, coordinated via CLAIM_CAPTURE (background).
+const IS_TOP_FRAME = (() => { try { return window.top === window; } catch { return false; } })();
+
 let mediaStream = null;
 let audioContext = null;
 let socket = null;
@@ -34,11 +39,14 @@ const WHISPER_SAMPLE_RATE = 16000;
 // prefixed mozCaptureStream). This gives the exact tab audio with no mic, no screen
 // share and no OS loopback. Returns null if there's no usable element (e.g. the
 // player lives in a cross-origin iframe, or the media is tainted).
-function getPageMediaStream() {
+function getPageMediaStream(strict = false) {
   const els = [...document.querySelectorAll('video, audio')];
-  const el = els.find(e => !e.paused && !e.muted && e.readyState >= 2)
-          || els.find(e => e.readyState >= 2)
-          || els[0];
+  const active = els.find(e => !e.paused && !e.muted && e.readyState >= 2);
+  // strict (iframes): only an actually playing, unmuted element counts — otherwise a
+  // muted ad video in some other iframe could steal the capture slot from the player.
+  const el = strict
+    ? active
+    : (active || els.find(e => e.readyState >= 2) || els[0]);
   if (!el) return null;
   const capture = el.captureStream || el.mozCaptureStream;
   if (!capture) return null;
@@ -48,6 +56,39 @@ function getPageMediaStream() {
   } catch (err) {
     console.warn('[audio-capture] captureStream failed:', err);
     return null;
+  }
+}
+
+// ── Capture-slot coordination (multi-frame) ─────────────────────────────────
+
+// The top frame without a player waits briefly for an iframe to claim the capture
+// slot before falling back to a system-audio device (avoids a useless mic prompt
+// when the video lives in an embed, e.g. Vimeo).
+let captureClaimNotify = null;
+
+browser.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'CAPTURE_CLAIMED' && captureClaimNotify) captureClaimNotify();
+});
+
+function waitForCaptureClaim(ms) {
+  return new Promise((resolve) => {
+    let done = false;
+    captureClaimNotify = () => {
+      if (!done) { done = true; captureClaimNotify = null; resolve(true); }
+    };
+    setTimeout(() => {
+      if (!done) { done = true; captureClaimNotify = null; resolve(false); }
+    }, ms);
+  });
+}
+
+async function claimCaptureSlot() {
+  try {
+    const resp = await browser.runtime.sendMessage({ type: 'CLAIM_CAPTURE' });
+    return !!(resp && resp.granted);
+  } catch {
+    // No background answer (shouldn't happen): let the top frame proceed alone.
+    return IS_TOP_FRAME;
   }
 }
 
@@ -70,13 +111,27 @@ async function startAudioCapture() {
   }
 
   // 1) Best path: capture the page's own <video>/<audio> directly — exact tab audio,
-  //    no mic, no OS setup. Works when the player lives in this page (YouTube,
-  //    Twitch, news sites). It can't reach players inside cross-origin iframes.
-  // 2) Fallback: a system-audio INPUT device (loopback, e.g. "CABLE Output").
-  mediaStream = getPageMediaStream();
+  //    no mic, no OS setup. With all_frames this also runs inside cross-origin
+  //    iframes (Vimeo embeds), so whichever frame has the player captures it.
+  // 2) Fallback (top frame only): a system-audio INPUT device (loopback).
+  mediaStream = getPageMediaStream(!IS_TOP_FRAME);
   const usedPageMedia = !!mediaStream;
 
-  if (!mediaStream) {
+  if (mediaStream) {
+    // Several frames may have media — only the first to claim the slot captures.
+    if (!(await claimCaptureSlot())) {
+      mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream = null;
+      return;
+    }
+  } else {
+    // Iframes never fall back to an input device; that choice belongs to the top frame.
+    if (!IS_TOP_FRAME) return;
+
+    // Give iframes a moment to find their player and claim the slot.
+    if (await waitForCaptureClaim(2500)) return;
+    if (!(await claimCaptureSlot())) return;
+
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },

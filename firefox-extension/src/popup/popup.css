@@ -164,6 +164,13 @@ body {
   color: #b0b0b0;
 }
 
+textarea.rules-area {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.5;
+  font-family: 'Inter', sans-serif;
+}
+
 select.key-input {
   appearance: none;
   cursor: pointer;

@@ -1015,6 +1015,14 @@ function makeResizable(panel) {
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 browser.runtime.onMessage.addListener((msg) => {
+  // Child frames (all_frames) never build UI — they only start/stop audio capture,
+  // so a player inside a cross-origin iframe (e.g. Vimeo embed) can be captured.
+  // IS_TOP_FRAME is defined in audio-capture.js (loaded before this script).
+  if (typeof IS_TOP_FRAME !== 'undefined' && !IS_TOP_FRAME) {
+    if (msg.type === 'START_FACTCHECK' && typeof startAudioCapture === 'function') startAudioCapture();
+    else if (msg.type === 'STOP_FACTCHECK' && typeof stopAudioCapture === 'function') stopAudioCapture();
+    return;
+  }
   console.log('[overlay] message received:', msg.type);
   switch (msg.type) {
 
