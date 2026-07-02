@@ -321,8 +321,8 @@ function createPanel() {
     '<div id="rtfc-header">',
       '<span><span class="rtfc-dot"></span>InTruth</span>',
       '<div class="rtfc-header-actions">',
-        '<button id="rtfc-summary-btn" title="Generar resumen">🧾 Resumen</button>',
-        '<button id="rtfc-export" title="Exportar sesión">↓ Exportar</button>',
+        '<button id="rtfc-summary-btn" title="' + escapeHtml(t('ov_summary_btn_title')) + '">' + escapeHtml(t('ov_summary_btn')) + '</button>',
+        '<button id="rtfc-export" title="' + escapeHtml(t('ov_export_title')) + '">' + escapeHtml(t('ov_export_btn')) + '</button>',
         '<button id="rtfc-close">✕</button>',
       '</div>',
     '</div>',
@@ -331,7 +331,7 @@ function createPanel() {
       '<div id="rtfc-summary" style="display:none"></div>',
       '<div id="rtfc-transcript-section">',
         '<div class="rtfc-section-header">',
-          '<span class="rtfc-section-label">Transcript</span>',
+          '<span class="rtfc-section-label">' + escapeHtml(t('ov_transcript')) + '</span>',
           '<button class="rtfc-toggle-btn" id="rtfc-transcript-toggle">▾</button>',
         '</div>',
         '<div id="rtfc-transcript-feed"></div>',
@@ -339,11 +339,11 @@ function createPanel() {
       '</div>',
       '<div id="rtfc-verdicts-section">',
         '<div class="rtfc-section-header">',
-          '<span class="rtfc-section-label">Puntos clave</span>',
+          '<span class="rtfc-section-label">' + escapeHtml(t('ov_keypoints')) + '</span>',
           '<div id="rtfc-speaker-editor"></div>',
         '</div>',
         '<div id="rtfc-verdicts">',
-          '<p class="rtfc-empty">Los puntos clave aparecerán aquí…</p>',
+          '<p class="rtfc-empty">' + escapeHtml(t('ov_empty')) + '</p>',
         '</div>',
       '</div>',
     '</div>',
@@ -680,24 +680,8 @@ function updateVerdict(result) {
 
 // ── Key points (neutral) ──────────────────────────────────────────────────────
 
-const CATEGORY_META = {
-  ANUNCIO:     { label: 'Anuncio',     color: '#3b82f6' },
-  CIFRA:       { label: 'Cifra',       color: '#8b5cf6' },
-  COMPROMISO:  { label: 'Compromiso',  color: '#10b981' },
-  DECLARACION: { label: 'Declaración', color: '#f59e0b' },
-  CITA:        { label: 'Cita',        color: '#06b6d4' },
-  POLITICA:    { label: 'Política',    color: '#ef4444' },
-  OTRO:        { label: 'Otro',        color: '#6b7280' },
-};
-
-const VERDICT_LABELS = {
-  'TRUE': 'Verdadero',
-  'SUBSTANTIALLY TRUE': 'Mayormente cierto',
-  'FALSE': 'Falso',
-  'MISLEADING': 'Engañoso',
-  'UNVERIFIABLE': 'No verificable',
-};
-const CONF_LABELS = { HIGH: 'Alta', MEDIUM: 'Media', LOW: 'Baja' };
+// Category/verdict/confidence labels live in lang.js (KP_CATEGORY_META,
+// verdictLabel(), confLabel()) so the panel and the export share one bilingual copy.
 
 let kpCounter = 0;
 const kpCards = new Map(); // id → card element
@@ -709,7 +693,7 @@ function prettyCategory(cat) {
 }
 
 function buildKeyPointCard(kp) {
-  const meta = CATEGORY_META[kp.category] || { label: prettyCategory(kp.category), color: '#64748b' };
+  const meta = KP_CATEGORY_META[kp.category] || { label: prettyCategory(kp.category), color: '#64748b' };
   const card = document.createElement('div');
   card.className = 'rtfc-keypoint';
   card._kpData = kp;
@@ -737,15 +721,15 @@ function buildKeyPointCard(kp) {
     '<div class="rtfc-kp-actions">',
       // Verification needs live web search, which doesn't work on the Groq free tier
       // (returns 413). Disabled for now; re-enable when a search-capable provider is set.
-      '<button class="rtfc-verify-btn" disabled title="Verificación no disponible por ahora: la búsqueda web no funciona en el plan gratuito de Groq">✓ Verificar</button>',
-      '<button class="rtfc-discard-btn" title="No relevante — descartar y aprender">👎</button>',
+      '<button class="rtfc-verify-btn" disabled title="' + escapeHtml(t('ov_verify_disabled_title')) + '">' + escapeHtml(t('ov_verify')) + '</button>',
+      '<button class="rtfc-discard-btn" title="' + escapeHtml(t('ov_discard_title')) + '">👎</button>',
     '</div>',
   ].join('');
 
   const btn = card.querySelector('.rtfc-verify-btn');
   if (btn && !btn.disabled) btn.addEventListener('click', () => {
     btn.disabled = true;
-    btn.textContent = '⟳ Verificando…';
+    btn.textContent = t('ov_verifying');
     browser.runtime.sendMessage({
       type: 'VERIFY_KEYPOINT',
       id: kp._id,
@@ -783,23 +767,23 @@ function applyKeyPointVerdict(id, result) {
     // Re-enable the button so the user can retry, and show the reason beside it
     // (don't destroy the actions, or there'd be nothing left to click).
     const btn = card.querySelector('.rtfc-verify-btn');
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Verificar'; }
+    if (btn) { btn.disabled = false; btn.textContent = t('ov_verify'); }
     let note = card.querySelector('.rtfc-kp-noverdict');
     if (!note) {
       note = document.createElement('span');
       note.className = 'rtfc-kp-noverdict';
       if (actions) actions.insertAdjacentElement('afterend', note); else card.appendChild(note);
     }
-    note.textContent = 'No se pudo verificar (búsqueda web no disponible). Inténtalo de nuevo.';
+    note.textContent = t('ov_no_verdict');
     return;
   }
 
   const color = colorForVerdict(result.verdict, result.confidence);
-  const label = VERDICT_LABELS[result.verdict] || result.verdict;
-  const conf = CONF_LABELS[result.confidence] || '';
+  const label = verdictLabel(result.verdict);
+  const conf = result.confidence ? confLabel(result.confidence) : '';
   const sourcesHTML = (result.sources ?? []).map((url, i) =>
     (url.startsWith('http://') || url.startsWith('https://'))
-      ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">Fuente ' + (i + 1) + '</a>'
+      ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(t('ov_source')) + ' ' + (i + 1) + '</a>'
       : ''
   ).join('');
 
@@ -808,7 +792,7 @@ function applyKeyPointVerdict(id, result) {
   v.innerHTML = [
     '<div class="rtfc-kp-verdict-head">',
       '<span class="rtfc-badge rtfc-badge--' + color + '">' + escapeHtml(label) + '</span>',
-      conf ? '<span class="rtfc-confidence-right">' + escapeHtml(conf) + ' confianza</span>' : '',
+      conf ? '<span class="rtfc-confidence-right">' + escapeHtml(conf) + ' ' + escapeHtml(t('ov_confidence')) + '</span>' : '',
     '</div>',
     '<p class="rtfc-explanation">' + escapeHtml(result.explanation || '') + '</p>',
     (sourcesHTML.trim() ? '<div class="rtfc-sources">' + sourcesHTML + '</div>' : ''),
@@ -823,12 +807,12 @@ function applyKeyPointVerdict(id, result) {
 function generateSummary() {
   if (typeof buildSummaryInput !== 'function') return;
   const input = buildSummaryInput();
-  if (!input || !input.trim()) { showError('Aún no hay contenido para resumir.'); return; }
+  if (!input || !input.trim()) { showError(t('ov_nothing_to_summarize')); return; }
   if (summaryEl) {
     summaryEl.style.display = '';
     summaryEl.innerHTML =
-      '<div class="rtfc-summary-title">Resumen</div>' +
-      '<div class="rtfc-summary-body rtfc-summary-loading">Generando resumen…</div>';
+      '<div class="rtfc-summary-title">' + escapeHtml(t('ov_summary_title')) + '</div>' +
+      '<div class="rtfc-summary-body rtfc-summary-loading">' + escapeHtml(t('ov_summary_loading')) + '</div>';
   }
   browser.runtime.sendMessage({ type: 'SUMMARIZE', input });
 }
@@ -836,9 +820,9 @@ function generateSummary() {
 function renderSummary(text) {
   if (!summaryEl) return;
   summaryEl.style.display = '';
-  const title = '<div class="rtfc-summary-title">Resumen</div>';
+  const title = '<div class="rtfc-summary-title">' + escapeHtml(t('ov_summary_title')) + '</div>';
   if (!text || !text.trim()) {
-    summaryEl.innerHTML = title + '<div class="rtfc-summary-body">No se pudo generar el resumen.</div>';
+    summaryEl.innerHTML = title + '<div class="rtfc-summary-body">' + escapeHtml(t('ov_summary_failed')) + '</div>';
     return;
   }
   summaryEl.innerHTML = title;
@@ -856,14 +840,14 @@ function renderParticipantsBar() {
   if (!el) return;
   const chips = participantNames.map((n, i) =>
     '<span class="rtfc-part-chip">' +
-      '<span class="rtfc-part-name" data-i="' + i + '" title="Clic para editar">' + escapeHtml(n) + '</span>' +
-      '<button class="rtfc-part-del" data-i="' + i + '" title="Quitar">✕</button>' +
+      '<span class="rtfc-part-name" data-i="' + i + '" title="' + escapeHtml(t('ov_part_edit_title')) + '">' + escapeHtml(n) + '</span>' +
+      '<button class="rtfc-part-del" data-i="' + i + '" title="' + escapeHtml(t('ov_part_del_title')) + '">✕</button>' +
     '</span>'
   ).join('');
   el.innerHTML =
-    '<span class="rtfc-part-label">👥 Participantes:</span>' +
+    '<span class="rtfc-part-label">' + escapeHtml(t('ov_participants')) + '</span>' +
     chips +
-    '<input class="rtfc-part-input" placeholder="+ nombre (coma para varios)" />';
+    '<input class="rtfc-part-input" placeholder="' + escapeHtml(t('ov_part_ph')) + '" />';
 
   el.querySelectorAll('.rtfc-part-name').forEach(span => {
     span.addEventListener('click', () => editParticipant(parseInt(span.dataset.i)));
@@ -902,7 +886,7 @@ function renderParticipantsBar() {
 function editParticipant(i) {
   const oldName = participantNames[i];
   if (oldName == null) return;
-  const newName = (window.prompt('Editar nombre del participante:', oldName) || '').trim();
+  const newName = (window.prompt(t('ov_part_edit_prompt'), oldName) || '').trim();
   if (!newName || newName === oldName) return;
   participantNames[i] = newName;
   browser.runtime.sendMessage({ type: 'RENAME_PARTICIPANT', oldName, newName });
@@ -923,33 +907,68 @@ function renameSpeakerInCards(oldName, newName) {
 }
 
 // ⭐ "Interesante": select text in the transcript → add it as a key point + learn.
+
+// The raw selection carries transcript furniture — "[23:48:39]" timecodes, "↳ "
+// translation markers, line breaks — which made the model summarize only part of a
+// multi-line selection. Strip it all down to plain running text.
+function cleanTranscriptSelection(text) {
+  return text
+    .replace(/\[\d{2}:\d{2}:\d{2}\]/g, ' ')
+    .replace(/(^|\n)\s*↳\s*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Resolve who said the selected fragment: from the selection's START (document
+// order), climb to its transcript line and walk backwards to the nearest speaker
+// header shown in the feed.
+function findSelectionSpeaker(sel) {
+  try {
+    if (!sel || !sel.rangeCount || !transcriptFeedEl) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const line = node && node.closest ? node.closest('.rtfc-transcript-line, .rtfc-tr-speaker') : null;
+    let el = line || null;
+    while (el) {
+      if (el.classList && el.classList.contains('rtfc-tr-speaker')) return el.textContent.trim() || null;
+      el = el.previousElementSibling;
+    }
+  } catch { /* selection APIs can be finicky — a missing speaker is fine */ }
+  return null;
+}
+
 function setupInterestingButton() {
   if (interestingBtn) return;
   interestingBtn = document.createElement('button');
   interestingBtn.id = 'rtfc-interesting';
-  interestingBtn.textContent = '⭐ Interesante';
+  interestingBtn.textContent = t('ov_interesting');
   interestingBtn.style.display = 'none';
   document.body.appendChild(interestingBtn);
 
   interestingBtn.addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
   interestingBtn.addEventListener('click', () => {
     const sel = window.getSelection();
-    const text = sel ? sel.toString().trim() : '';
-    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text });
+    const text = sel ? cleanTranscriptSelection(sel.toString()) : '';
+    const speaker = sel ? findSelectionSpeaker(sel) : null;
+    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text, speaker });
     if (sel) sel.removeAllRanges();
     hideInterestingBtn();
   });
 
   if (!transcriptFeedEl) return;
-  transcriptFeedEl.addEventListener('mouseup', () => {
+  transcriptFeedEl.addEventListener('mouseup', (e) => {
+    // Show the button right where the mouse released the selection (clamped to the
+    // viewport), not above the selection where it overlapped the panel header.
+    const x = e.clientX, y = e.clientY;
     setTimeout(() => {
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : '';
       if (text && sel.rangeCount && transcriptFeedEl.contains(sel.anchorNode)) {
-        const rect = sel.getRangeAt(0).getBoundingClientRect();
-        interestingBtn.style.left = Math.max(4, rect.left) + 'px';
-        interestingBtn.style.top  = Math.max(4, rect.top - 30) + 'px';
         interestingBtn.style.display = 'block';
+        const bw = interestingBtn.offsetWidth || 110;
+        const bh = interestingBtn.offsetHeight || 26;
+        interestingBtn.style.left = Math.max(4, Math.min(x + 10, window.innerWidth - bw - 6)) + 'px';
+        interestingBtn.style.top  = Math.max(4, Math.min(y + 12, window.innerHeight - bh - 6)) + 'px';
       } else {
         hideInterestingBtn();
       }
@@ -982,11 +1001,12 @@ function makeDraggable(panel) {
   document.addEventListener('mouseup', () => { isDragging = false; header.style.cursor = 'grab'; });
 }
 
-// Drag the bottom-right corner to resize the panel in both directions.
+// Drag the bottom-LEFT corner to resize: the panel is pinned by its RIGHT edge
+// (it lives at the right side of the screen) and grows leftwards/downwards.
 function makeResizable(panel) {
   const handle = document.createElement('div');
   handle.id = 'rtfc-resize';
-  handle.title = 'Arrastra para redimensionar';
+  handle.title = t('ov_resize_title');
   panel.appendChild(handle);
 
   let isResizing = false, startX, startY, startW, startH;
@@ -995,9 +1015,9 @@ function makeResizable(panel) {
     const rect = panel.getBoundingClientRect();
     startX = e.clientX; startY = e.clientY;
     startW = rect.width; startH = rect.height;
-    // Pin the panel by its top-left and lift the height cap so it can grow freely.
-    panel.style.right = 'unset';
-    panel.style.left = rect.left + 'px';
+    // Pin the panel by its top-right and lift the height cap so it can grow freely.
+    panel.style.left = 'unset';
+    panel.style.right = (window.innerWidth - rect.right) + 'px';
     panel.style.top = rect.top + 'px';
     panel.style.maxHeight = 'none';
     e.preventDefault();
@@ -1005,7 +1025,8 @@ function makeResizable(panel) {
   });
   document.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
-    const w = Math.max(260, Math.min(startW + e.clientX - startX, window.innerWidth - 20));
+    // Dragging left makes it wider (the right edge stays put).
+    const w = Math.max(260, Math.min(startW - (e.clientX - startX), window.innerWidth - 20));
     const h = Math.max(220, Math.min(startH + e.clientY - startY, window.innerHeight - 20));
     panel.style.width  = w + 'px';
     panel.style.height = h + 'px';
@@ -1027,26 +1048,28 @@ browser.runtime.onMessage.addListener((msg) => {
   switch (msg.type) {
 
     case 'START_FACTCHECK':
-      createPanel();
-      setDotState('connecting');
-      browser.storage.local.get('participants').then(d => {
+      // Resolve the UI language BEFORE building the panel so every string is right.
+      browser.storage.local.get(['participants', 'uiLanguage']).then(d => {
+        setUiLang(d.uiLanguage || defaultUiLanguage());
+        createPanel();
+        setDotState('connecting');
         participantNames = (d.participants || '').split(',').map(s => s.trim()).filter(Boolean);
         renderParticipantsBar();
+        startSession();
+        speakers = parseSpeakersFromTitle(document.title || '');
+        speakerColorMap.clear();
+        browser.runtime.sendMessage({
+          type:  'PAGE_TITLE',
+          title: document.title || '',
+          date:  (() => {
+            const el = document.querySelector('meta[itemprop="uploadDate"]') ||
+                       document.querySelector('meta[property="og:updated_time"]');
+            return el ? new Date(el.content).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+          })(),
+        });
+        renderSpeakerEditor();
+        if (typeof startAudioCapture === 'function') startAudioCapture();
       });
-      startSession();
-      speakers = parseSpeakersFromTitle(document.title || '');
-      speakerColorMap.clear();
-      browser.runtime.sendMessage({
-        type:  'PAGE_TITLE',
-        title: document.title || '',
-        date:  (() => {
-          const el = document.querySelector('meta[itemprop="uploadDate"]') ||
-                     document.querySelector('meta[property="og:updated_time"]');
-          return el ? new Date(el.content).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
-        })(),
-      });
-      renderSpeakerEditor();
-      if (typeof startAudioCapture === 'function') startAudioCapture();
       break;
 
     case 'STOP_FACTCHECK':
@@ -1083,7 +1106,7 @@ browser.runtime.onMessage.addListener((msg) => {
       break;
 
     case 'PIPELINE_ERROR':
-      showError(msg.message || 'Se produjo un error en el procesamiento.');
+      showError(msg.message || t('ov_pipeline_error'));
       setDotState('error');
       break;
 

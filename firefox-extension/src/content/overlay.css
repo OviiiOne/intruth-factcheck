@@ -821,17 +821,19 @@
 }
 .rtfc-error-toast--info .rtfc-error-close { color: #cbd5e1; }
 
-/* ── Resize handle (bottom-right corner) ── */
+/* ── Resize handle (bottom-LEFT corner: the panel sits at the right edge of the
+     screen, so the grip must face the free space and the panel grows leftwards) ── */
 
 #rtfc-resize {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: 0;
   width: 16px;
   height: 16px;
-  cursor: nwse-resize;
+  cursor: nesw-resize;
   z-index: 2;
-  /* two diagonal lines as a grip, in the panel's muted style */
+  /* two diagonal lines as a grip, in the panel's muted style (mirrored) */
+  transform: scaleX(-1);
   background:
     linear-gradient(135deg, transparent 0 8px, rgba(255,255,255,0.30) 8px 10px, transparent 10px) no-repeat,
     linear-gradient(135deg, transparent 0 12px, rgba(255,255,255,0.30) 12px 14px, transparent 14px) no-repeat;

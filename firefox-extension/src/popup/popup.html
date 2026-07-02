@@ -16,6 +16,14 @@
 
     <div class="keys-section" id="keysSection">
 
+      <div class="key-field">
+        <label class="key-label">Idioma / Language</label>
+        <div class="mode-toggle">
+          <button class="mode-btn" id="uiLangEs">Español</button>
+          <button class="mode-btn" id="uiLangEn">English</button>
+        </div>
+      </div>
+
       <div class="mode-toggle">
         <button class="mode-btn active" id="modeApiKey">API Key</button>
         <button class="mode-btn" id="modeProxy">Proxy</button>
@@ -23,96 +31,82 @@
 
       <div id="apiKeyFields">
         <div class="key-field">
-          <label class="key-label">Anthropic API Key</label>
+          <label class="key-label" data-i18n="p_lbl_anthropic">Anthropic API Key</label>
           <input class="key-input" id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off"/>
         </div>
       </div>
 
       <div id="proxyFields" style="display:none">
         <div class="key-field">
-          <label class="key-label">Proxy URL</label>
+          <label class="key-label" data-i18n="p_lbl_proxy_url">Proxy URL</label>
           <input class="key-input" id="proxyUrl" type="url" placeholder="https://tu-proxy.up.railway.app" autocomplete="off"/>
         </div>
         <div class="key-field">
-          <label class="key-label">Token del proxy</label>
-          <input class="key-input" id="proxyToken" type="password" placeholder="el valor de PROXY_TOKEN" autocomplete="off"/>
+          <label class="key-label" data-i18n="p_lbl_proxy_token">Token del proxy</label>
+          <input class="key-input" id="proxyToken" type="password" data-i18n-ph="p_ph_proxy_token" placeholder="" autocomplete="off"/>
         </div>
         <div class="key-field">
-          <label class="key-label">AI Model</label>
+          <label class="key-label" data-i18n="p_lbl_ai_model">Modelo de IA</label>
           <div class="provider-toggle">
             <button class="provider-btn" id="provGroq">Groq <span class="free-tag">free</span></button>
             <button class="provider-btn" id="provGemini">Gemini</button>
             <button class="provider-btn" id="provClaude">Claude</button>
           </div>
         </div>
-        <div class="proxy-hint">Groq: gratis (con límites de velocidad), verificación con búsqueda web. Gemini/Claude: de pago.</div>
+        <div class="proxy-hint" data-i18n="p_proxy_hint"></div>
       </div>
 
       <div class="key-field">
-        <label class="key-label">Gladia API Key <span class="optional">(optional)</span></label>
-        <input class="key-input" id="gladiaKey" type="password" placeholder="your gladia key..." autocomplete="off"/>
+        <label class="key-label"><span data-i18n="p_lbl_gladia">Gladia API Key</span> <span class="optional" data-i18n="p_optional">(opcional)</span></label>
+        <input class="key-input" id="gladiaKey" type="password" data-i18n-ph="p_ph_gladia" placeholder="" autocomplete="off"/>
       </div>
-      <div class="gladia-hint">Gratis 10h/mes en gladia.io. En modo <b>Proxy</b> puedes dejarlo vacío: la clave de Gladia va en el servidor. Sin clave ni proxy usa Whisper local (~150MB, 1ª vez). Para idiomas no europeos (árabe, hebreo, persa…) se recomienda Gladia.</div>
+      <div class="gladia-hint" data-i18n="p_gladia_hint"></div>
 
       <div class="key-field">
-        <label class="key-label">Idioma de la rueda de prensa</label>
-        <select class="key-input" id="sourceLanguage">
-          <option value="auto">Detección automática</option>
-          <option value="es">Español</option>
-          <option value="en">Inglés (English)</option>
-          <option value="fr">Francés (Français)</option>
-          <option value="de">Alemán (Deutsch)</option>
-          <option value="it">Italiano</option>
-          <option value="pt">Portugués (Português)</option>
-          <option value="ru">Ruso (Русский)</option>
-          <option value="uk">Ucraniano (Українська)</option>
-          <option value="tr">Turco (Türkçe)</option>
-          <option value="ar">Árabe (العربية)</option>
-          <option value="he">Hebreo (עברית)</option>
-          <option value="fa">Persa / Farsi (فارسی)</option>
-          <option value="zh">Chino (中文)</option>
-          <option value="ja">Japonés (日本語)</option>
-        </select>
+        <label class="key-label" data-i18n="p_lbl_source_lang">Idioma de la rueda de prensa</label>
+        <select class="key-input" id="sourceLanguage"></select>
       </div>
-      <div class="gladia-hint">Inglés y español: solo transcripción. Otros idiomas: se traducirán al español.</div>
 
       <div class="key-field">
-        <label class="key-label">Participantes <span class="optional">(opcional)</span></label>
-        <input class="key-input" id="participants" type="text" placeholder="Ej: Trump, Rutte" autocomplete="off"/>
+        <label class="key-label" data-i18n="p_lbl_understood">Idiomas que entiendes (no traducir)</label>
+        <select class="key-input understood-select" id="understoodLanguages" multiple size="4"></select>
       </div>
-      <div class="gladia-hint">Quién habla en la rueda de prensa, separado por comas. La IA atribuirá los puntos clave solo a estos nombres.</div>
+      <div class="gladia-hint" data-i18n="p_understood_hint"></div>
 
       <div class="key-field">
-        <label class="key-label">Reglas aprendidas <span class="optional">(editable)</span></label>
-        <textarea class="key-input rules-area" id="feedbackRules" rows="5" placeholder="Aún no hay reglas. Se crean solas a partir de tus 👎 y ⭐."></textarea>
+        <label class="key-label"><span data-i18n="p_lbl_participants">Participantes</span> <span class="optional" data-i18n="p_optional">(opcional)</span></label>
+        <input class="key-input" id="participants" type="text" data-i18n-ph="p_ph_participants" placeholder="" autocomplete="off"/>
       </div>
-      <div class="gladia-hint">La IA convierte tus 👎 (descartar) y ⭐ (interesante) en reglas fijas que aplica siempre al elegir puntos clave. Una regla por línea: puedes editarlas, añadir nuevas o borrar las que no te convenzan.</div>
+      <div class="gladia-hint" data-i18n="p_participants_hint"></div>
 
       <div class="key-field">
-        <label class="key-label">Copia de seguridad</label>
+        <label class="key-label"><span data-i18n="p_lbl_rules">Reglas aprendidas</span> <span class="optional" data-i18n="p_editable">(editable)</span></label>
+        <textarea class="key-input rules-area" id="feedbackRules" rows="5" data-i18n-ph="p_ph_rules" placeholder=""></textarea>
+      </div>
+      <div class="gladia-hint" data-i18n="p_rules_hint"></div>
+
+      <div class="key-field">
+        <label class="key-label" data-i18n="p_lbl_backup">Copia de seguridad</label>
         <div class="backup-btns">
-          <button class="backup-btn" id="exportBackupBtn">↓ Exportar</button>
-          <button class="backup-btn" id="importBackupBtn">↑ Importar</button>
+          <button class="backup-btn" id="exportBackupBtn" data-i18n="p_btn_export">↓ Exportar</button>
+          <button class="backup-btn" id="importBackupBtn" data-i18n="p_btn_import">↑ Importar</button>
           <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none"/>
         </div>
         <label class="backup-check">
           <input type="checkbox" id="backupIncludeCreds" checked/>
-          Incluir credenciales (URL y token del proxy, claves API)
+          <span data-i18n="p_chk_creds">Incluir credenciales (URL y token del proxy, claves API)</span>
         </label>
       </div>
-      <div class="gladia-hint">Guarda o restaura en un archivo los ajustes, participantes y todo lo aprendido (👎/⭐ y reglas). Con la casilla marcada incluye también las credenciales: guarda ese archivo en un sitio privado.</div>
+      <div class="gladia-hint" data-i18n="p_backup_hint"></div>
 
       <div class="key-hint" id="keyHint"></div>
     </div>
 
     <button class="toggle-btn" id="toggleBtn">Start Fact-Checking</button>
 
-    <div class="firefox-note">
-      Firefox no captura el audio de la pestaña: al pulsar Start, elige un dispositivo
-      de <b>audio del sistema</b> (loopback, p. ej. "CABLE Output" o "Stereo Mix"), no el micrófono.<br/>
-      Gladia: tiempo real + detección de orador. Sin Gladia: Whisper local (~5s de retardo).
-    </div>
+    <div class="firefox-note" data-i18n="p_firefox_note"></div>
   </div>
+  <script src="../lib/lang.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

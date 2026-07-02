@@ -36,7 +36,7 @@ function logKeyPoint(kp) {
   keyPointsLog.push({
     id: kp._id,
     timecode: kp._timestamp || '',
-    category: kp.category || 'OTRO',
+    category: kp.category || promptLang().catOther,
     point: kp.point,
     quote: kp.quote || '',
     speaker: kp.speaker || null,
@@ -62,13 +62,14 @@ function buildSummaryInput() {
   if (keyPointsLog.length) {
     const lines = keyPointsLog.map(kp => {
       const spk = kp.speaker ? kp.speaker + ': ' : '';
-      const v = kp.verdict ? ' [Verificado: ' + kp.verdict + ']' : '';
+      // The marker must match what summaryPrompt() tells the model to look for.
+      const v = kp.verdict ? ' [' + promptLang().verifiedMarker + ': ' + kp.verdict + ']' : '';
       return '- [' + (kp.timecode || '') + '] ' + spk + kp.point + v;
     });
-    return 'Título: ' + title + '\n\nPuntos clave:\n' + lines.join('\n');
+    return t('ex_title_label') + ' ' + title + '\n\n' + t('ex_kp_label') + '\n' + lines.join('\n');
   }
-  const tr = transcriptLog.map(t => t.translation || t.text).join(' ');
-  return 'Título: ' + title + '\n\nTranscripción:\n' + tr.slice(0, 8000);
+  const tr = transcriptLog.map(x => x.translation || x.text).join(' ');
+  return t('ex_title_label') + ' ' + title + '\n\n' + t('ex_tr_label') + '\n' + tr.slice(0, 8000);
 }
 
 function setSummary(text) { sessionSummary = text || ''; }
@@ -93,7 +94,7 @@ function stopSession() {
 
 function exportPDF() {
   if (!sessionLog.length && !transcriptLog.length && !keyPointsLog.length && !sessionSummary) {
-    alert('No hay nada que exportar todavía.');
+    alert(t('ex_nothing'));
     return;
   }
 
@@ -164,18 +165,8 @@ function exportPDF() {
     return headerHTML + cardsHTML;
   }).join('');
 
-  const CAT_LABELS = {
-    ANUNCIO: 'Anuncio', CIFRA: 'Cifra', COMPROMISO: 'Compromiso',
-    DECLARACION: 'Declaración', CITA: 'Cita', POLITICA: 'Política', OTRO: 'Otro',
-  };
-  const VERDICT_LABELS = {
-    'TRUE': 'Verdadero', 'SUBSTANTIALLY TRUE': 'Mayormente cierto',
-    'FALSE': 'Falso', 'MISLEADING': 'Engañoso', 'UNVERIFIABLE': 'No verificable',
-  };
-  const CAT_COLORS = {
-    ANUNCIO: '#3b82f6', CIFRA: '#8b5cf6', COMPROMISO: '#10b981',
-    DECLARACION: '#f59e0b', CITA: '#06b6d4', POLITICA: '#ef4444', OTRO: '#6b7280',
-  };
+  // Category/verdict labels come from lang.js (KP_CATEGORY_META, verdictLabel):
+  // one bilingual copy shared with the overlay, both languages' codes recognised.
   // Consistent colour per speaker name across key points and the transcript.
   const spkColorMap = {};
   const speakerColor = (name) => {
@@ -184,21 +175,22 @@ function exportPDF() {
     return spkColorMap[name];
   };
   const keyPointsHTML = keyPointsLog.length
-    ? '<div class="claims-title">Puntos clave (' + keyPointsLog.length + ')</div>' +
+    ? '<div class="claims-title">' + escapeHtml(t('ex_keypoints')) + ' (' + keyPointsLog.length + ')</div>' +
       keyPointsLog.map(kp => {
-        const cat = (kp.category || 'OTRO').toUpperCase();
-        const label = CAT_LABELS[cat] || (cat.charAt(0) + cat.slice(1).toLowerCase());
-        const catColor = CAT_COLORS[cat] || '#64748b';
+        const cat = (kp.category || promptLang().catOther).toUpperCase();
+        const catMeta = KP_CATEGORY_META[cat];
+        const label = catMeta ? catMeta.label : (cat.charAt(0) + cat.slice(1).toLowerCase());
+        const catColor = catMeta ? catMeta.color : '#64748b';
         const spk = kp.speaker ? '<span class="kp-speaker" style="color:' + speakerColor(kp.speaker) + '">' + escapeHtml(kp.speaker) + '</span>' : '';
         const quote = kp.quote ? '<div class="kp-quote">“' + escapeHtml(kp.quote) + '”</div>' : '';
         let verdict = '';
         if (kp.verdict) {
           const vc = verdictColor(kp.verdict, kp.confidence);
           const vsources = (kp.sources && kp.sources.length)
-            ? ' ' + kp.sources.map((u, i) => '<a href="' + escapeHtml(u) + '" class="source-link">Fuente ' + (i + 1) + '</a>').join(' ')
+            ? ' ' + kp.sources.map((u, i) => '<a href="' + escapeHtml(u) + '" class="source-link">' + escapeHtml(t('ex_source')) + ' ' + (i + 1) + '</a>').join(' ')
             : '';
           verdict = '<div class="kp-verdict">' +
-            '<span class="kp-verdict-badge" style="color:' + vc + '">' + escapeHtml(VERDICT_LABELS[kp.verdict] || kp.verdict) + '</span> ' +
+            '<span class="kp-verdict-badge" style="color:' + vc + '">' + escapeHtml(verdictLabel(kp.verdict)) + '</span> ' +
             escapeHtml(kp.verdictExplanation || '') + vsources +
           '</div>';
         }
@@ -216,13 +208,13 @@ function exportPDF() {
     : '';
 
   const summaryHTML = sessionSummary
-    ? '<div class="summary-box"><div class="summary-box-title">Resumen</div>' +
+    ? '<div class="summary-box"><div class="summary-box-title">' + escapeHtml(t('ex_summary')) + '</div>' +
       '<div class="summary-box-text">' + escapeHtml(sessionSummary) + '</div></div>'
     : '';
 
   let trLastSpk = null;
   const transcriptHTML = transcriptLog.length
-    ? '<div class="claims-title">Transcripción (' + transcriptLog.length + ')</div>' +
+    ? '<div class="claims-title">' + escapeHtml(t('ex_transcript')) + ' (' + transcriptLog.length + ')</div>' +
       '<div class="transcript">' +
         transcriptLog.map(t => {
           let spkHTML = '';
@@ -296,7 +288,7 @@ function exportPDF() {
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +
-      '<div class="report-title">InTruth — Informe</div>' +
+      '<div class="report-title">InTruth — ' + escapeHtml(t('ex_report')) + '</div>' +
       '<div class="report-meta">' +
         '<span>📺 ' + escapeHtml(pageTitle) + '</span>' +
         '<span>🕐 ' + escapeHtml(exportDate) + '</span>' +
@@ -313,7 +305,7 @@ function exportPDF() {
           '<div class="summary-item"><span class="summary-count misleading">' + misleadingCount + '</span><span class="summary-label">Misleading</span></div>' +
           '<div class="summary-item"><span class="summary-count unverifiable">' + unverifiableCount + '</span><span class="summary-label">Unverifiable</span></div>' +
         '</div>' +
-        '<div class="claims-title">Verificados (' + sessionLog.length + ')</div>' +
+        '<div class="claims-title">' + escapeHtml(t('ex_verified')) + ' (' + sessionLog.length + ')</div>' +
         claimsHTML
       : '') +
     transcriptHTML +

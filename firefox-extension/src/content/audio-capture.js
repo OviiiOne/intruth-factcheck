@@ -12,6 +12,7 @@ let mediaStream = null;
 let audioContext = null;
 let socket = null;
 let captureActive = false;
+let usedPageMediaCapture = false; // capturing the page's own <video>/<audio> (vs a device)
 let utteranceBuffer = '';
 let gladiaKey = '';
 let gladiaProxyUrl = ''; // set when Gladia should be started via the proxy (key server-side)
@@ -97,10 +98,11 @@ async function claimCaptureSlot() {
 async function startAudioCapture() {
   if (captureActive) return;
 
-  const data = await browser.storage.local.get(['gladiaKey', 'sourceLanguage', 'proxyUrl', 'connectionMode', 'proxyToken']);
+  const data = await browser.storage.local.get(['gladiaKey', 'sourceLanguage', 'proxyUrl', 'connectionMode', 'proxyToken', 'uiLanguage']);
   gladiaKey = data.gladiaKey || '';
   sourceLanguage = data.sourceLanguage || 'auto';
   proxyToken = data.proxyToken || '';
+  setUiLang(data.uiLanguage || defaultUiLanguage());
 
   // In proxy mode without a direct key, start Gladia through the proxy so the
   // Gladia key stays on the server (Railway), never in the browser.
@@ -116,6 +118,7 @@ async function startAudioCapture() {
   // 2) Fallback (top frame only): a system-audio INPUT device (loopback).
   mediaStream = getPageMediaStream(!IS_TOP_FRAME);
   const usedPageMedia = !!mediaStream;
+  usedPageMediaCapture = usedPageMedia;
 
   if (mediaStream) {
     // Several frames may have media — only the first to claim the slot captures.
@@ -142,8 +145,8 @@ async function startAudioCapture() {
       browser.runtime.sendMessage({
         type: 'PIPELINE_ERROR',
         message: err.name === 'NotAllowedError'
-          ? 'Permiso de audio denegado. Permite la entrada de audio para esta página.'
-          : 'Fallo al capturar audio: ' + err.message,
+          ? t('ac_perm_denied')
+          : t('ac_capture_fail') + err.message,
       });
       return;
     }
@@ -153,7 +156,7 @@ async function startAudioCapture() {
   if (!audioTracks.length) {
     browser.runtime.sendMessage({
       type: 'PIPELINE_ERROR',
-      message: 'No se detectó audio. Asegúrate de que el vídeo se está reproduciendo, o elige un dispositivo de audio del sistema.',
+      message: t('ac_no_audio'),
     });
     stopAudioCapture();
     return;
@@ -161,13 +164,13 @@ async function startAudioCapture() {
 
   captureActive = true;
 
-  const src = usedPageMedia ? 'audio del vídeo' : 'dispositivo de audio';
-  const eng = gladiaProxyUrl ? 'Gladia (proxy)'
-            : gladiaKey ? 'Gladia (clave directa)'
-            : 'Whisper local';
+  const src = usedPageMedia ? t('ac_src_video') : t('ac_src_device');
+  const eng = gladiaProxyUrl ? t('ac_gladia_proxy')
+            : gladiaKey ? t('ac_gladia_direct')
+            : t('ac_whisper');
   browser.runtime.sendMessage({
     type: 'PIPELINE_INFO',
-    message: 'Capturando ' + src + ' · Transcripción: ' + eng,
+    message: fmt(t('ac_capturing'), { src, eng }),
   });
 
   if (gladiaKey || gladiaProxyUrl) {
@@ -213,8 +216,8 @@ async function connectGladia() {
       let detail = '';
       try { const e = await initRes.json(); detail = (e && e.error && e.error.message) || ''; } catch {}
       console.error('[gladia] init failed:', initRes.status, detail);
-      const via = gladiaKey ? 'Gladia' : 'Gladia por proxy';
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: via + ' falló — estado ' + initRes.status + (detail ? ': ' + detail : '') + '.' });
+      const via = gladiaKey ? '' : t('ac_via_proxy');
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: fmt(t('ac_gladia_failed_status'), { via, status: initRes.status }) + (detail ? ' ' + detail : '') });
       stopAudioCapture();
       return;
     }
@@ -223,7 +226,7 @@ async function connectGladia() {
     const wsUrl = initData.url;
 
     if (!wsUrl) {
-      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia no devolvió URL de sesión. Revisa la clave de Gladia en Railway.' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: t('ac_no_session_url') });
       stopAudioCapture();
       return;
     }
@@ -233,7 +236,7 @@ async function connectGladia() {
     socket.onopen = () => {
       console.log('[audio-capture] gladia connected');
       browser.runtime.sendMessage({ type: 'CAPTURE_READY' });
-      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Conectado a Gladia — escuchando, esperando que alguien hable…' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: t('ac_connected') });
       startGladiaPipeline();
     };
 
@@ -262,7 +265,7 @@ async function connectGladia() {
     };
 
     socket.onerror = () => {
-      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Gladia falló. Cambiando a Whisper local…' });
+      browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: t('ac_fallback_whisper') });
       fallbackToWhisper();
     };
 
@@ -270,10 +273,10 @@ async function connectGladia() {
       console.log('[gladia] closed:', e.code, e.reason);
       if (captureActive && transcriptionMode === 'gladia') {
         if (e.code === 1008 || e.code === 4001 || e.code === 4003) {
-          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'Gladia: autenticación fallida (código ' + e.code + '). Revisa la clave de Gladia en Railway.' });
+          browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: fmt(t('ac_auth_failed'), { code: e.code }) });
           stopAudioCapture();
         } else {
-          browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: 'Gladia desconectado (código ' + e.code + (e.reason ? ': ' + e.reason : '') + ') — reconectando…' });
+          browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: fmt(t('ac_reconnecting'), { code: e.code, reason: e.reason ? ': ' + e.reason : '' }) });
           setTimeout(() => {
             if (captureActive && transcriptionMode === 'gladia') connectGladia();
           }, 2000);
@@ -283,19 +286,43 @@ async function connectGladia() {
 
   } catch (err) {
     console.error('[gladia] connection error:', err);
-    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: 'No se pudo conectar con Gladia/proxy: ' + err.message + ' (¿URL del proxy correcta? ¿la web bloquea la conexión?).' });
+    browser.runtime.sendMessage({ type: 'PIPELINE_ERROR', message: fmt(t('ac_connect_error'), { msg: err.message }) });
     stopAudioCapture();
   }
 }
 
+// Gladia pipeline state: kept module-level so a reconnect can tear the previous
+// pipeline down (before this, a reconnect stacked a SECOND processor on the same
+// socket — duplicated audio — and a dead track was never noticed).
+let gladiaSource = null;
+let gladiaProcessor = null;
+let gladiaKeepalive = null;
+let gladiaWatchdog = null;
+let lastChunkSentAt = 0;
+let SILENT_CHUNK = null; // 100ms of silence, precomputed
+
+function silentChunkBase64() {
+  if (!SILENT_CHUNK) SILENT_CHUNK = arrayBufferToBase64(new Int16Array(WHISPER_SAMPLE_RATE / 10).buffer);
+  return SILENT_CHUNK;
+}
+
+function stopGladiaPipeline() {
+  if (gladiaKeepalive) { clearInterval(gladiaKeepalive); gladiaKeepalive = null; }
+  if (gladiaWatchdog) { clearInterval(gladiaWatchdog); gladiaWatchdog = null; }
+  if (gladiaProcessor) { try { gladiaProcessor.disconnect(); } catch {} gladiaProcessor = null; }
+  if (gladiaSource) { try { gladiaSource.disconnect(); } catch {} gladiaSource = null; }
+  if (audioContext) { audioContext.close().catch(() => {}); audioContext = null; }
+}
+
 function startGladiaPipeline() {
   if (!mediaStream) return;
+  stopGladiaPipeline(); // never run two pipelines at once (reconnects)
 
   audioContext = new AudioContext({ sampleRate: WHISPER_SAMPLE_RATE });
-  const source = audioContext.createMediaStreamSource(mediaStream);
+  gladiaSource = audioContext.createMediaStreamSource(mediaStream);
 
-  const processor = audioContext.createScriptProcessor(4096, 1, 1);
-  processor.onaudioprocess = (e) => {
+  gladiaProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+  gladiaProcessor.onaudioprocess = (e) => {
     if (socket?.readyState !== WebSocket.OPEN) return;
 
     const float32 = e.inputBuffer.getChannelData(0);
@@ -307,10 +334,40 @@ function startGladiaPipeline() {
     const base64 = arrayBufferToBase64(int16.buffer);
     // Gladia v2 live expects this exact shape for streamed audio.
     socket.send(JSON.stringify({ type: 'audio_chunk', data: { chunk: base64 } }));
+    lastChunkSentAt = Date.now();
   };
 
-  source.connect(processor);
-  processor.connect(audioContext.destination);
+  gladiaSource.connect(gladiaProcessor);
+  gladiaProcessor.connect(audioContext.destination);
+
+  lastChunkSentAt = Date.now();
+
+  // Keepalive: when the video stalls to buffer, the audio flow stops; with no chunks
+  // arriving Gladia times the session out and transcription dies SILENTLY. Feed it
+  // short silent chunks while the real audio is interrupted.
+  gladiaKeepalive = setInterval(() => {
+    if (!captureActive || transcriptionMode !== 'gladia') return;
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - lastChunkSentAt < 1500) return;
+    socket.send(JSON.stringify({ type: 'audio_chunk', data: { chunk: silentChunkBase64() } }));
+    lastChunkSentAt = Date.now();
+  }, 1000);
+
+  // Watchdog: some players KILL their captured track when they rebuffer or switch
+  // quality — the pipeline then hangs on a dead track forever. Re-grab the page
+  // media and rebuild the pipeline onto the same socket.
+  gladiaWatchdog = setInterval(() => {
+    if (!captureActive || transcriptionMode !== 'gladia' || !mediaStream) return;
+    if (!usedPageMediaCapture) return; // device capture: nothing to re-grab
+    const track = mediaStream.getAudioTracks()[0];
+    if (track && track.readyState !== 'ended') return;
+    const fresh = getPageMediaStream(!IS_TOP_FRAME);
+    if (!fresh) return; // player not back yet — retry on the next tick
+    mediaStream.getTracks().forEach(tr => tr.stop());
+    mediaStream = fresh;
+    startGladiaPipeline();
+    browser.runtime.sendMessage({ type: 'PIPELINE_INFO', message: t('ac_recaptured') });
+  }, 4000);
 }
 
 function arrayBufferToBase64(buffer) {
@@ -325,17 +382,17 @@ function arrayBufferToBase64(buffer) {
 // ── Whisper local (fallback) ─────────────────────────────────────────────────
 
 function fallbackToWhisper() {
+  transcriptionMode = 'whisper'; // set FIRST so the closing socket doesn't reconnect
   if (socket) { socket.close(); socket = null; }
-  if (audioContext) { audioContext.close().catch(() => {}); audioContext = null; }
+  stopGladiaPipeline();
   // Keep mediaStream — we reuse it for Whisper
-  transcriptionMode = 'whisper';
   startWithWhisper();
 }
 
 async function startWithWhisper() {
   browser.runtime.sendMessage({
     type: 'PIPELINE_INFO',
-    message: 'Cargando modelo Whisper local (~150MB, solo la 1ª vez)…',
+    message: t('ac_whisper_loading'),
   });
 
   try {
@@ -344,14 +401,14 @@ async function startWithWhisper() {
     console.error('[whisper] model load error:', err);
     browser.runtime.sendMessage({
       type: 'PIPELINE_ERROR',
-      message: 'No se pudo cargar el modelo Whisper: ' + err.message,
+      message: t('ac_whisper_load_error') + err.message,
     });
     return;
   }
 
   browser.runtime.sendMessage({
     type: 'PIPELINE_INFO',
-    message: 'Whisper cargado — transcribiendo en local (sin detección de orador).',
+    message: t('ac_whisper_ready'),
   });
   browser.runtime.sendMessage({ type: 'CAPTURE_READY' });
 
@@ -546,6 +603,8 @@ function stopAudioCapture() {
     whisperInterval = null;
   }
   whisperChunks = [];
+
+  stopGladiaPipeline();
 
   if (socket) {
     socket.close();

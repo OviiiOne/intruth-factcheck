@@ -214,6 +214,19 @@ select.key-input option {
   color: #e8e8e8;
 }
 
+select.understood-select {
+  height: auto;
+  padding: 3px 4px;
+}
+select.understood-select option {
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+select.understood-select option:checked {
+  background: rgba(74, 222, 128, 0.22) linear-gradient(0deg, rgba(74,222,128,0.22), rgba(74,222,128,0.22));
+  color: #e8e8e8;
+}
+
 .key-hint {
   font-size: 10px;
   color: #9a9a9a;

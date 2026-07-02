@@ -5,6 +5,7 @@ const proxyUrlEl = document.getElementById('proxyUrl');
 const proxyTokenEl = document.getElementById('proxyToken');
 const gladiaEl = document.getElementById('gladiaKey');
 const sourceLanguageEl = document.getElementById('sourceLanguage');
+const understoodEl = document.getElementById('understoodLanguages');
 const participantsEl = document.getElementById('participants');
 const feedbackRulesEl = document.getElementById('feedbackRules');
 const keyHint = document.getElementById('keyHint');
@@ -16,10 +17,69 @@ const proxyFields = document.getElementById('proxyFields');
 const provGroqBtn = document.getElementById('provGroq');
 const provGeminiBtn = document.getElementById('provGemini');
 const provClaudeBtn = document.getElementById('provClaude');
+const uiLangEsBtn = document.getElementById('uiLangEs');
+const uiLangEnBtn = document.getElementById('uiLangEn');
 
 let isActive = false;
 let mode = 'apikey';
 let aiProvider = 'groq';
+let understoodExplicit = false; // whether the user ever chose understood languages
+
+// ── UI language (bilingual edition) ──────────────────────────────────────────
+// One setting drives the popup/overlay texts AND the language the AI writes in.
+
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  uiLangEsBtn.classList.toggle('active', getUiLang() === 'es');
+  uiLangEnBtn.classList.toggle('active', getUiLang() === 'en');
+  setActive(isActive); // refresh status + toggle-button texts
+}
+
+// Rebuild both language selects with labels in the current UI language,
+// preserving the current selections.
+function buildLanguageSelects(selectedSource, selectedUnderstood) {
+  const source = selectedSource !== undefined ? selectedSource : sourceLanguageEl.value || 'auto';
+  const understood = selectedUnderstood !== undefined
+    ? selectedUnderstood
+    : [...understoodEl.selectedOptions].map(o => o.value);
+
+  sourceLanguageEl.innerHTML = '';
+  const auto = document.createElement('option');
+  auto.value = 'auto';
+  auto.textContent = t('p_opt_auto');
+  sourceLanguageEl.appendChild(auto);
+  for (const l of EXT_LANGUAGES) {
+    const o = document.createElement('option');
+    o.value = l.code;
+    o.textContent = l[getUiLang()] || l.en;
+    sourceLanguageEl.appendChild(o);
+  }
+  sourceLanguageEl.value = source;
+
+  understoodEl.innerHTML = '';
+  for (const l of EXT_LANGUAGES) {
+    const o = document.createElement('option');
+    o.value = l.code;
+    o.textContent = l[getUiLang()] || l.en;
+    o.selected = understood.includes(l.code);
+    understoodEl.appendChild(o);
+  }
+}
+
+function switchUiLang(lang) {
+  setUiLang(lang);
+  browser.storage.local.set({ uiLanguage: getUiLang() });
+  // If the user never chose understood languages, follow the new language's default.
+  buildLanguageSelects(undefined, understoodExplicit
+    ? undefined
+    : defaultUnderstoodLanguages(getUiLang()));
+  applyI18n();
+  updateHint();
+}
+
+uiLangEsBtn.addEventListener('click', () => switchUiLang('es'));
+uiLangEnBtn.addEventListener('click', () => switchUiLang('en'));
 
 // ── Provider toggle ──────────────────────────────────────────────────────────
 
@@ -38,21 +98,32 @@ provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider', 'feedbackRules']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider', 'feedbackRules', 'uiLanguage', 'understoodLanguages']).then(data => {
+  setUiLang(data.uiLanguage || defaultUiLanguage());
+  understoodExplicit = Array.isArray(data.understoodLanguages) && data.understoodLanguages.length > 0;
+  const understood = understoodExplicit ? data.understoodLanguages : defaultUnderstoodLanguages(getUiLang());
+  buildLanguageSelects(data.sourceLanguage || 'auto', understood);
+
   if (data.anthropicKey) { anthropicEl.value = data.anthropicKey; anthropicEl.classList.add('saved'); }
   if (data.proxyUrl) { proxyUrlEl.value = data.proxyUrl; proxyUrlEl.classList.add('saved'); }
   if (data.proxyToken) { proxyTokenEl.value = data.proxyToken; proxyTokenEl.classList.add('saved'); }
   if (data.gladiaKey) { gladiaEl.value = data.gladiaKey; gladiaEl.classList.add('saved'); }
-  if (data.sourceLanguage) sourceLanguageEl.value = data.sourceLanguage;
   if (data.participants) participantsEl.value = data.participants;
   if (Array.isArray(data.feedbackRules)) feedbackRulesEl.value = data.feedbackRules.join('\n');
   if (data.connectionMode === 'proxy') switchMode('proxy');
   switchProvider(data.aiProvider || 'groq');
+  applyI18n();
   updateHint();
 });
 
 sourceLanguageEl.addEventListener('change', () => {
   browser.storage.local.set({ sourceLanguage: sourceLanguageEl.value });
+});
+
+understoodEl.addEventListener('change', () => {
+  const langs = [...understoodEl.selectedOptions].map(o => o.value);
+  understoodExplicit = langs.length > 0;
+  browser.storage.local.set({ understoodLanguages: langs });
 });
 
 participantsEl.addEventListener('change', () => {
@@ -104,19 +175,19 @@ function updateHint() {
   const hasGladia = gladiaEl.value.trim();
 
   if (!hasClaude) {
-    keyHint.textContent = mode === 'proxy' ? 'Introduce la URL del proxy.' : 'Introduce tu API key de Anthropic.';
+    keyHint.textContent = mode === 'proxy' ? t('p_hint_enter_proxy') : t('p_hint_enter_key');
     keyHint.className = 'key-hint error';
     toggleBtn.disabled = !isActive;
   } else if (hasGladia) {
-    keyHint.textContent = 'Listo — transcripción con Gladia (clave directa).';
+    keyHint.textContent = t('p_hint_ready_gladia_direct');
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   } else if (mode === 'proxy') {
-    keyHint.textContent = 'Listo — Gladia a través del proxy (clave en el servidor).';
+    keyHint.textContent = t('p_hint_ready_gladia_proxy');
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   } else {
-    keyHint.textContent = 'Listo — Whisper local (audio de pestaña, ~5s de retardo).';
+    keyHint.textContent = t('p_hint_ready_whisper');
     keyHint.className = 'key-hint ok';
     toggleBtn.disabled = false;
   }
@@ -126,8 +197,9 @@ function updateHint() {
 
 // What a backup may contain. Credentials only go in when the checkbox is ticked,
 // and on import a file is never trusted: only these keys, type-checked, are applied.
-const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill'];
+const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages'];
 const BACKUP_CRED_KEYS = ['proxyUrl', 'proxyToken', 'gladiaKey', 'anthropicKey'];
+const BACKUP_ARRAY_KEYS = ['feedbackNegative', 'feedbackPositive', 'feedbackRules', 'understoodLanguages'];
 
 const exportBackupBtn = document.getElementById('exportBackupBtn');
 const importBackupBtn = document.getElementById('importBackupBtn');
@@ -160,9 +232,7 @@ exportBackupBtn.addEventListener('click', async () => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  backupHint(backupIncludeCreds.checked
-    ? 'Copia exportada (CON credenciales — guárdala en un sitio privado).'
-    : 'Copia exportada (sin credenciales).', true);
+  backupHint(backupIncludeCreds.checked ? t('p_backup_done_creds') : t('p_backup_done'), true);
 });
 
 importBackupBtn.addEventListener('click', () => importBackupFile.click());
@@ -173,16 +243,16 @@ importBackupFile.addEventListener('change', async () => {
   if (!file) return;
   let payload;
   try { payload = JSON.parse(await file.text()); }
-  catch { backupHint('El archivo no es un JSON válido.', false); return; }
+  catch { backupHint(t('p_backup_bad_json'), false); return; }
   if (!payload || payload.app !== 'intruth-backup' || typeof payload.data !== 'object' || payload.data === null) {
-    backupHint('El archivo no parece una copia de InTruth.', false);
+    backupHint(t('p_backup_not_ours'), false);
     return;
   }
   const clean = {};
   for (const key of [...BACKUP_SETTINGS_KEYS, ...BACKUP_CRED_KEYS]) {
     if (!(key in payload.data)) continue;
     const v = payload.data[key];
-    if (key === 'feedbackNegative' || key === 'feedbackPositive' || key === 'feedbackRules') {
+    if (BACKUP_ARRAY_KEYS.includes(key)) {
       if (Array.isArray(v)) clean[key] = v.map(s => String(s).trim()).filter(Boolean);
     } else if (key === 'feedbackSinceDistill') {
       if (Number.isInteger(v) && v >= 0) clean[key] = v;
@@ -193,11 +263,11 @@ importBackupFile.addEventListener('change', async () => {
     }
   }
   if (!Object.keys(clean).length) {
-    backupHint('La copia no contiene datos reconocibles.', false);
+    backupHint(t('p_backup_empty'), false);
     return;
   }
   await browser.storage.local.set(clean);
-  // Reload so every field shows the restored values (background picks up rule edits
+  // Reload so every field shows the restored values (background picks up the changes
   // via storage.onChanged; the rest is read on the next Start).
   window.location.reload();
 });
@@ -210,9 +280,9 @@ browser.runtime.sendMessage({ type: 'GET_STATUS' }).then(res => {
 
 function setActive(active) {
   isActive = active;
-  toggleBtn.textContent = active ? 'Stop Fact-Checking' : 'Start Fact-Checking';
+  toggleBtn.textContent = active ? t('p_btn_stop') : t('p_btn_start');
   toggleBtn.className = 'toggle-btn' + (active ? ' active' : '');
-  statusEl.textContent = active ? 'Live • Fact-checking active' : 'Inactive';
+  statusEl.textContent = active ? t('p_status_active') : t('p_status_inactive');
   statusEl.className = 'status' + (active ? ' active' : '');
   keysSection.style.display = active ? 'none' : 'flex';
   if (!active) updateHint();
@@ -233,29 +303,29 @@ toggleBtn.addEventListener('click', async () => {
   const gladiaKey = gladiaEl.value.trim();
 
   if (mode === 'apikey' && !anthropicKey) {
-    keyHint.textContent = 'Enter your Anthropic API key.';
+    keyHint.textContent = t('p_hint_enter_key');
     keyHint.className = 'key-hint error';
     return;
   }
 
   if (mode === 'proxy' && !proxyUrl) {
-    keyHint.textContent = 'Enter your proxy URL.';
+    keyHint.textContent = t('p_hint_enter_proxy');
     keyHint.className = 'key-hint error';
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, participants: participantsEl.value.trim(), connectionMode: mode, aiProvider });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, participants: participantsEl.value.trim(), connectionMode: mode, aiProvider, uiLanguage: getUiLang() });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });
     if (res?.ok) {
       setActive(true);
     } else {
-      keyHint.textContent = 'Failed: ' + (res?.error || 'unknown error');
+      keyHint.textContent = t('p_start_failed') + (res?.error || 'unknown error');
       keyHint.className = 'key-hint error';
     }
   } catch (err) {
-    keyHint.textContent = 'Error: ' + err.message;
+    keyHint.textContent = t('p_error') + err.message;
     keyHint.className = 'key-hint error';
   }
 });

@@ -21,8 +21,12 @@ let LEARNED_RULES = [];
 let FEEDBACK_SINCE_DISTILL = 0;
 const DISTILL_EVERY = 5; // distil after this many new feedback examples
 
+// Bilingual edition: `uiLanguage` (via lang.js setUiLang) drives the language the AI
+// writes in; UNDERSTOOD_LANGS are the source languages that skip translation.
+let UNDERSTOOD_LANGS = defaultUnderstoodLanguages();
+
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
@@ -33,13 +37,17 @@ async function loadKeys() {
   POS_EXAMPLES = Array.isArray(data.feedbackPositive) ? data.feedbackPositive : [];
   LEARNED_RULES = Array.isArray(data.feedbackRules) ? data.feedbackRules : [];
   FEEDBACK_SINCE_DISTILL = Number.isInteger(data.feedbackSinceDistill) ? data.feedbackSinceDistill : 0;
+  setUiLang(data.uiLanguage || defaultUiLanguage());
+  UNDERSTOOD_LANGS = (Array.isArray(data.understoodLanguages) && data.understoodLanguages.length)
+    ? data.understoodLanguages
+    : defaultUnderstoodLanguages();
 }
 
 // Keep the learning/prompt state in sync when it changes outside this script —
 // the user editing rules in the popup, or restoring a backup, possibly mid-session
 // (loadKeys only runs on start). Our own writes also land here; reassigning the
 // same values is harmless.
-browser.storage.onChanged.addListener((changes, area) => {
+browser.storage.onChanged.addListener(async (changes, area) => {
   if (area !== 'local') return;
   if (changes.feedbackRules) {
     LEARNED_RULES = Array.isArray(changes.feedbackRules.newValue) ? changes.feedbackRules.newValue : [];
@@ -52,6 +60,17 @@ browser.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.participants && typeof changes.participants.newValue === 'string') {
     PARTICIPANTS = changes.participants.newValue;
+  }
+  if (changes.uiLanguage) {
+    setUiLang(changes.uiLanguage.newValue || defaultUiLanguage());
+    if (!(await browser.storage.local.get('understoodLanguages')).understoodLanguages) {
+      UNDERSTOOD_LANGS = defaultUnderstoodLanguages();
+    }
+  }
+  if (changes.understoodLanguages) {
+    UNDERSTOOD_LANGS = (Array.isArray(changes.understoodLanguages.newValue) && changes.understoodLanguages.newValue.length)
+      ? changes.understoodLanguages.newValue
+      : defaultUnderstoodLanguages();
   }
 });
 
@@ -86,7 +105,7 @@ async function distillRules() {
       POS_EXAMPLES.length ? `Marked IMPORTANT by the user:\n- ${POS_EXAMPLES.join('\n- ')}` : '',
       LEARNED_RULES.length ? `Current rules:\n- ${LEARNED_RULES.join('\n- ')}` : '',
     ].filter(Boolean).join('\n\n');
-    const raw = (await callClaude(input, DISTILL_PROMPT, false, 1024, true, true)).text;
+    const raw = (await callClaude(input, distillPrompt(), false, 1024, true, true)).text;
     const obj = parseObject(raw);
     if (obj && Array.isArray(obj.rules)) {
       const rules = obj.rules
@@ -120,7 +139,12 @@ Only include check-worthy factual claims (statistics, historical events, policy 
 
 Return ONLY a JSON array. No markdown, no explanation outside the array.`;
 
-const KEYPOINTS_PROMPT = `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
+// Bilingual edition: the prompts are built on demand so the output language (and the
+// category codes) follow the `uiLanguage` setting. promptLang() comes from lang.js.
+
+function keypointsPrompt() {
+  const L = promptLang();
+  return `You are following a live press conference or political statement. From the transcript excerpt, extract the noteworthy KEY POINTS: announcements, figures/statistics, commitments or promises, factual claims, geopolitical and foreign-policy positions, statements about conflicts or security, accusations, threats, denials, named decisions, and important verbatim quotes.
 
 Be EXTREMELY SELECTIVE — extract only what a journalist would put in a headline or jot down to quote later: a real announcement, a hard figure/statistic, a concrete commitment or promise, a named decision, or a significant claim (including geopolitical ones like "Iran will not have a nuclear weapon"). SKIP routine narration, scene-setting, transitions, hedging, thanks and small talk. ALSO skip personal praise, compliments and mutual flattery between officials (e.g. one leader calling another "a great guy / the best Secretary General"), greetings, and procedural remarks ("any questions?").
 
@@ -128,38 +152,58 @@ Return AT MOST ONE key point for this excerpt — the single most newsworthy ite
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 
+MIND THE TEMPORAL CONTEXT: speakers often QUOTE HISTORY or recall past events (old wars, former possessions, past decisions). NEVER present a historical reference or rhetorical retelling as a current announcement, plan, position or threat. If a noteworthy point is historical, make that explicit in the wording (e.g. "recalls that…"); if you cannot tell whether it is current or historical, SKIP it rather than guess.
+
 Return ONLY a JSON object of the form {"points": [ ... ]} (no markdown, no text outside the JSON). Each element of "points" has:
-- "point": a concise, neutral one-sentence summary, written in SPANISH
-- "category": a short UPPERCASE label. Prefer one of: ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA. If none fits well, invent a concise label in Spanish (one or two words, e.g. GEOPOLITICA, SEGURIDAD, ECONOMIA, JUSTICIA). Use OTRO only as a last resort.
+- "point": a concise, neutral one-sentence summary, written in ${L.name.toUpperCase()}
+- "category": a short UPPERCASE label. Prefer one of: ${L.cats}. If none fits well, invent a concise label in ${L.name} (one or two words, e.g. ${L.catExamples}). Use ${L.catOther} only as a last resort.
 - "quote": the most relevant short verbatim fragment from the transcript, in its ORIGINAL language (or "" if none)
 - "speaker": who said it, using a real name when known; never "Speaker N"; null if unknown
 
 If nothing is noteworthy, return {"points": []}.`;
+}
 
-const TRANSLATE_PROMPT = `Translate the user's text into Spanish. If the text is already in Spanish or in English, return it EXACTLY as-is, unchanged. Output ONLY the resulting text — no quotes, no notes, no explanation.`;
+function translatePrompt() {
+  const L = promptLang();
+  const passthrough = [...new Set([L.name, ...UNDERSTOOD_LANGS.map(langName).filter(Boolean)])];
+  const passList = passthrough.length > 1
+    ? passthrough.slice(0, -1).join(', ') + ' or ' + passthrough[passthrough.length - 1]
+    : passthrough[0];
+  return `Translate the user's text into ${L.name}. If the text is already in ${passList}, return it EXACTLY as-is, unchanged. Output ONLY the resulting text — no quotes, no notes, no explanation.`;
+}
 
-const VERIFY_PROMPT = `You are a fact-checker. Evaluate the SINGLE claim the user provides, using the web results if given and your own knowledge. Take the event date/context into account.
+function verifyPrompt() {
+  const L = promptLang();
+  return `You are a fact-checker. Evaluate the SINGLE claim the user provides, using the web results if given and your own knowledge. Take the event date/context into account.
 
 Return ONLY a JSON object (no array, no markdown) with:
 - "verdict": one of TRUE, SUBSTANTIALLY TRUE, FALSE, MISLEADING, UNVERIFIABLE
 - "confidence": one of HIGH, MEDIUM, LOW
-- "explanation": 1-2 sentences IN SPANISH explaining the verdict and what the evidence says
+- "explanation": 1-2 sentences IN ${L.name.toUpperCase()} explaining the verdict and what the evidence says
 
 No text outside the JSON object.`;
+}
 
-const SUMMARY_PROMPT = `You are summarizing a live press conference for a Spanish-speaking professional. The user gives you the key points (and maybe a transcript). Write a TRUE NARRATIVE SUMMARY in SPANISH, in PLAIN TEXT (no Markdown symbols like # or *).
+function summaryPrompt() {
+  const L = promptLang();
+  return `You are summarizing a live press conference for a professional who reads ${L.name}. The user gives you the key points (and maybe a transcript). Write a TRUE NARRATIVE SUMMARY in ${L.name.toUpperCase()}, in PLAIN TEXT (no Markdown symbols like # or *).
 
 CRITICAL: the key points are ALREADY listed separately in the report, so do NOT repeat them. This must be a SYNTHESIS in flowing prose — NOT a list. Absolutely NO bullet points, NO "• ", NO enumerating the points one by one. Instead, weave them into 2–4 connected paragraphs that explain what the event was about, who said what, the main lines of argument, the most significant decisions/figures/positions, and the overall takeaway. Group related points, drop repetition, and connect ideas with prose.
 
 Think of it as the opening paragraphs a journalist writes ABOVE the bullet list of facts: it should add understanding and context, not duplicate the list.
 
-ONLY if the input explicitly marks points as "[Verificado: ...]", you may add at the end a short "Verificaciones:" paragraph mentioning those verdicts in prose. NEVER invent or imply a fact-check, and never say anything has been "confirmado"/"verificado" unless it is marked as such in the input.
+ONLY if the input explicitly marks points as "[${L.verifiedMarker}: ...]", you may add at the end a short "${L.verifHeading}" paragraph mentioning those verdicts in prose. NEVER invent or imply a fact-check, and never state that anything has been "confirmed"/"verified" unless it is marked as such in the input.
+
+Mind the temporal context: if a point is a historical reference or a retelling of past events, present it as such — NEVER turn history into current events, plans or threats, and never infer intentions beyond what was literally said.
 
 Be concise and neutral. Report only what was said; do not assess truth yourself. Return only the summary text.`;
+}
 
-const DISTILL_PROMPT = `You maintain a SHORT list of editorial rules for extracting key points from live press conferences. The rules are learned from user feedback: examples the user discarded as NOT relevant, examples the user marked as IMPORTANT, and the current rule list.
+function distillPrompt() {
+  const L = promptLang();
+  return `You maintain a SHORT list of editorial rules for extracting key points from live press conferences. The rules are learned from user feedback: examples the user discarded as NOT relevant, examples the user marked as IMPORTANT, and the current rule list.
 
-Produce an UPDATED list of AT MOST 8 rules, each ONE short imperative sentence IN SPANISH (e.g. "Nunca extraigas halagos personales entre dirigentes", "Captura siempre cifras de gasto militar").
+Produce an UPDATED list of AT MOST 8 rules, each ONE short imperative sentence IN ${L.name.toUpperCase()} (e.g. ${L.ruleExamples}).
 
 - GENERALISE the pattern behind the examples; do not just restate a single example.
 - Keep current rules that are still supported by the examples; merge near-duplicates; drop rules the examples now contradict.
@@ -167,8 +211,12 @@ Produce an UPDATED list of AT MOST 8 rules, each ONE short imperative sentence I
 - Rules must be about WHAT to extract or skip (content criteria), never about formatting or truthfulness.
 
 Return ONLY a JSON object of the form {"rules": ["...", "..."]} — no markdown, no text outside the JSON.`;
+}
 
-const MANUAL_KEYPOINT_PROMPT = `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in SPANISH>", "category": "<one of ANUNCIO, CIFRA, COMPROMISO, DECLARACION, CITA, POLITICA, or a short Spanish label>", "quote": "<the fragment in its original language>", "speaker": null}. No text outside the JSON.`;
+function manualKeypointPrompt() {
+  const L = promptLang();
+  return `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. The summary must cover the WHOLE fragment from its first sentence to its last — do not drop the beginning or keep only the ending; if it spans several ideas, connect them in one sentence. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in ${L.name.toUpperCase()} covering the entire fragment>", "category": "<one of ${L.cats}, or a short ${L.name} label>", "quote": "<the FULL fragment in its original language>", "speaker": null}. No text outside the JSON.`;
+}
 
 // ── Speaker parsing ──────────────────────────────────────────────────────────
 
@@ -601,9 +649,10 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     const participantList = PARTICIPANTS
       ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean)
       : parseSpeakersFromTitle(title || '');
+    const otherSpk = promptLang().otherSpeaker;
     const speakerLegend = participantList.length
-      ? `\nParticipants: ${participantList.join(', ')}. For "speaker": if it is clearly one of these participants, use that EXACT name; if it is someone else (a journalist or moderator asking a question, or anyone not listed), use "Otro"; use null only if truly impossible to tell. Do NOT force a non-participant onto a participant's name.`
-      : `\nIdentify the speaker from context; use "Otro" for journalists/moderators; use null if unclear; never output "Speaker N".`;
+      ? `\nParticipants: ${participantList.join(', ')}. For "speaker": if it is clearly one of these participants, use that EXACT name; if it is someone else (a journalist or moderator asking a question, or anyone not listed), use "${otherSpk}"; use null only if truly impossible to tell. Do NOT force a non-participant onto a participant's name.`
+      : `\nIdentify the speaker from context; use "${otherSpk}" for journalists/moderators; use null if unclear; never output "Speaker N".`;
     const titleContext = (title || participantList.length)
       ? `Event: "${title || ''}"${dateContext}${speakerLegend}\n\n`
       : '';
@@ -628,7 +677,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 
     const raw = (await callClaude(
       `${titleContext}Transcript: "${contextText}"${alreadyNoted}${feedbackCtx}`,
-      KEYPOINTS_PROMPT,
+      keypointsPrompt(),
       false, 2048, true, true
     )).text;
     const obj = parseObject(raw);
@@ -645,7 +694,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
         type: 'NEW_KEYPOINTS',
         results: valid.map(r => ({
           point: r.point,
-          category: (r.category || 'OTRO').toUpperCase(),
+          category: (r.category || promptLang().catOther).toUpperCase(),
           quote: r.quote || '',
           speaker: dominantSpeaker
             || (r.speaker && !String(r.speaker).match(/^Speaker\s*\d+$/i) ? r.speaker : null),
@@ -659,19 +708,23 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 }
 
 // Turn a transcript fragment the user marked (⭐) into a key point + learn from it.
-async function addManualKeyPoint(text) {
+// `speaker` comes from the overlay (nearest speaker header above the selection) and
+// takes precedence over whatever the model guesses.
+async function addManualKeyPoint(text, speaker) {
   if (!text || !text.trim()) return;
   addFeedback('pos', text);
+  const catOther = promptLang().catOther;
+  const spk = (speaker && speaker.trim()) ? speaker.trim() : null;
   try {
-    const raw = (await callClaude(`Fragment: "${text}"`, MANUAL_KEYPOINT_PROMPT, false, 512, true)).text;
+    const raw = (await callClaude(`Fragment: "${text}"`, manualKeypointPrompt(), false, 512, true)).text;
     const kp = parseObject(raw);
     const result = (kp && kp.point)
-      ? { point: kp.point, category: (kp.category || 'OTRO').toUpperCase(), quote: kp.quote || text, speaker: kp.speaker || null, dominantSpeakerId: null }
-      : { point: text, category: 'OTRO', quote: text, speaker: null, dominantSpeakerId: null };
+      ? { point: kp.point, category: (kp.category || catOther).toUpperCase(), quote: kp.quote || text, speaker: spk || kp.speaker || null, dominantSpeakerId: null }
+      : { point: text, category: catOther, quote: text, speaker: spk, dominantSpeakerId: null };
     if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [result] });
   } catch (err) {
     console.error('[manual-keypoint] error:', err);
-    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [{ point: text, category: 'OTRO', quote: text, speaker: null }] });
+    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [{ point: text, category: catOther, quote: text, speaker: spk }] });
   }
 }
 
@@ -689,10 +742,10 @@ async function verifyKeyPoint(id, claim, quote) {
     // there is NO ungrounded fallback. Run it SILENT and retry once if the search model
     // errors transiently (e.g. Groq compound 413); if it still fails, we return no
     // verdict and the card shows "No se pudo verificar."
-    let { text, sources } = await callClaude(userMsg, VERIFY_PROMPT, true, 768, false, true);
+    let { text, sources } = await callClaude(userMsg, verifyPrompt(), true, 768, false, true);
     let result = parseObject(text);
     if (!result || !result.verdict) {
-      const retry = await callClaude(userMsg, VERIFY_PROMPT, true, 768, false, true);
+      const retry = await callClaude(userMsg, verifyPrompt(), true, 768, false, true);
       result = parseObject(retry.text);
       sources = retry.sources;
     }
@@ -714,7 +767,7 @@ async function verifyKeyPoint(id, claim, quote) {
 
 async function summarizeSession(input) {
   try {
-    const { text } = await callClaude(input, SUMMARY_PROMPT, false, 2048);
+    const { text } = await callClaude(input, summaryPrompt(), false, 2048);
     if (activeTabId) sendToTab(activeTabId, { type: 'SUMMARY_RESULT', text: text || '' });
   } catch (err) {
     console.error('[summary] error:', err);
@@ -738,17 +791,17 @@ function sendToTab(tabId, msg) {
 
 // ── Translation ────────────────────────────────────────────────────────────────
 
-// Spanish and English are left untranslated (user understands both). Any other
-// selected language — or 'auto' — gets translated to Spanish (the prompt passes
-// Spanish/English through unchanged, so 'auto' stays correct without detection).
+// Languages the user marked as understood are left untranslated. Any other selected
+// language — or 'auto' — gets translated to the UI language (the prompt passes the
+// understood languages through unchanged, so 'auto' stays correct without detection).
 function needsTranslation() {
-  return SOURCE_LANGUAGE !== 'es' && SOURCE_LANGUAGE !== 'en';
+  return !UNDERSTOOD_LANGS.includes(SOURCE_LANGUAGE);
 }
 
-async function translateToSpanish(text) {
+async function translateToUiLanguage(text) {
   if (!text || !text.trim()) return '';
   try {
-    const out = (await callClaude(text, TRANSLATE_PROMPT, false, 768, false, true)).text;
+    const out = (await callClaude(text, translatePrompt(), false, 768, false, true)).text;
     return (out || '').trim();
   } catch {
     return '';
@@ -768,7 +821,7 @@ async function relayTranscript(msg) {
   const timecode = msg.isFinal ? getClockTimecode() : '';
   let translation = '';
   if (msg.isFinal && needsTranslation()) {
-    translation = await translateToSpanish(msg.text);
+    translation = await translateToUiLanguage(msg.text);
   }
   // Resolve a speaker label for the transcript (Gladia diarization). The overlay
   // shows it at the start and whenever the speaker changes.
@@ -862,7 +915,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return Promise.resolve();
 
     case 'ADD_MANUAL_KEYPOINT':
-      addManualKeyPoint(msg.text);
+      addManualKeyPoint(msg.text, msg.speaker);
       return Promise.resolve();
 
     case 'ADD_PARTICIPANT': {
@@ -922,7 +975,9 @@ async function startFactCheck() {
 
   await loadKeys();
   if (!ANTHROPIC_KEY && !PROXY_URL) {
-    throw new Error('Configura una API key de Anthropic o una URL de proxy en el popup.');
+    throw new Error(getUiLang() === 'es'
+      ? 'Configura una API key de Anthropic o una URL de proxy en el popup.'
+      : 'Set an Anthropic API key or a proxy URL in the popup.');
   }
 
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
