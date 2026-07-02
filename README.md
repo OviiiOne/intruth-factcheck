@@ -69,6 +69,27 @@ when Firefox closes, but settings and learned rules persist (fixed add-on id).
    the participants.
 2. Open the page with the video, **press play (unmuted)**, then hit *Start*.
 
+## Deploying the proxy (recommended)
+
+`proxy/` is a tiny Express server that keeps every API key on the server, so
+nothing sensitive ever lives in the browser. Access is gated by a shared token.
+On [Railway](https://railway.app) (free tier is enough):
+
+1. Fork this repo to your own GitHub account.
+2. Railway → *New Project* → *Deploy from GitHub repo* → pick your fork and branch.
+3. In the service settings set **Root Directory** to `proxy`.
+4. Add the environment variables:
+   - `GROQ_API_KEY` — free at [console.groq.com](https://console.groq.com) (default provider)
+   - `GLADIA_API_KEY` — free 10h/month at [gladia.io](https://gladia.io) (real-time transcription)
+   - `PROXY_TOKEN` — any long random string; the extension popup must send the same one
+   - optional: `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` if you use those providers
+   - do **not** set `ALLOWED_ORIGIN` (it must stay `*` for a browser extension)
+5. Generate a public domain (*Settings → Networking*) and put that URL plus your
+   `PROXY_TOKEN` in the popup, Proxy mode.
+
+Any Node host works the same way (Render, Fly.io, your own server):
+`cd proxy && npm install && node server.js`.
+
 ## Limitations
 
 Transcription and key-point extraction are AI-based and imperfect: expect occasional
