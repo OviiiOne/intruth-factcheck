@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "InTruth",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Real-time fact-checking of political speech and debates",
 
   "browser_specific_settings": {

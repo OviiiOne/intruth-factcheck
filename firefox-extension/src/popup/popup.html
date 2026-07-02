@@ -88,16 +88,10 @@
       <div class="key-field">
         <label class="key-label" data-i18n="p_lbl_backup">Copia de seguridad</label>
         <div class="backup-btns">
-          <button class="backup-btn" id="exportBackupBtn" data-i18n="p_btn_export">↓ Exportar</button>
-          <button class="backup-btn" id="importBackupBtn" data-i18n="p_btn_import">↑ Importar</button>
-          <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none"/>
+          <button class="backup-btn" id="openBackupBtn" data-i18n="p_backup_open">↗ Exportar / importar…</button>
         </div>
-        <label class="backup-check">
-          <input type="checkbox" id="backupIncludeCreds" checked/>
-          <span data-i18n="p_chk_creds">Incluir credenciales (URL y token del proxy, claves API)</span>
-        </label>
       </div>
-      <div class="gladia-hint" data-i18n="p_backup_hint"></div>
+      <div class="gladia-hint" data-i18n="p_backup_open_hint"></div>
 
       <div class="key-hint" id="keyHint"></div>
     </div>

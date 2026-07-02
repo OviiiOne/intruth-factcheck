@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <link rel="stylesheet" href="popup.css"/>
+  <style>
+    /* Small standalone popup WINDOW (browser.windows.create type:'popup'). Backups
+       live here because Firefox closes browser-action popups when a file picker
+       opens. Sized by the opener (~520x400): fill it, no tab-page framing. */
+    html, body { min-height: 100vh; }
+    body { display: flex; justify-content: center; align-items: flex-start; padding: 18px 16px; }
+    .popup { width: 100%; max-width: 470px; }
+    .backup-btns { margin-top: 4px; }
+    .backup-btn { padding: 8px 0; font-size: 11px; }
+    .key-hint { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="popup">
+    <div class="header">
+      <span class="logo">⬡</span>
+      <span class="title">InTruth</span>
+      <span class="badge" data-i18n="p_lbl_backup">Copia de seguridad</span>
+    </div>
+
+    <div class="keys-section">
+      <div class="gladia-hint" data-i18n="p_backup_hint"></div>
+
+      <label class="backup-check">
+        <input type="checkbox" id="backupIncludeCreds" checked/>
+        <span data-i18n="p_chk_creds"></span>
+      </label>
+
+      <div class="backup-btns">
+        <button class="backup-btn" id="exportBackupBtn" data-i18n="p_btn_export"></button>
+        <button class="backup-btn" id="importBackupBtn" data-i18n="p_btn_import"></button>
+        <input type="file" id="importBackupFile" accept=".json,application/json" style="display:none"/>
+      </div>
+
+      <div class="key-hint" id="backupHint"></div>
+    </div>
+  </div>
+  <script src="../lib/lang.js"></script>
+  <script src="backup.js"></script>
+</body>
+</html>

@@ -193,83 +193,20 @@ function updateHint() {
   }
 }
 
-// ── Backup export / import ────────────────────────────────────────────────────
+// ── Backup ────────────────────────────────────────────────────────────────────
+// Export/import live in their own extension TAB (backup.html): Firefox closes this
+// popup the moment a file picker opens, which killed the import mid-flight.
 
-// What a backup may contain. Credentials only go in when the checkbox is ticked,
-// and on import a file is never trusted: only these keys, type-checked, are applied.
-const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages'];
-const BACKUP_CRED_KEYS = ['proxyUrl', 'proxyToken', 'gladiaKey', 'anthropicKey'];
-const BACKUP_ARRAY_KEYS = ['feedbackNegative', 'feedbackPositive', 'feedbackRules', 'understoodLanguages'];
-
-const exportBackupBtn = document.getElementById('exportBackupBtn');
-const importBackupBtn = document.getElementById('importBackupBtn');
-const importBackupFile = document.getElementById('importBackupFile');
-const backupIncludeCreds = document.getElementById('backupIncludeCreds');
-
-function backupHint(text, ok) {
-  keyHint.textContent = text;
-  keyHint.className = 'key-hint ' + (ok ? 'ok' : 'error');
-}
-
-exportBackupBtn.addEventListener('click', async () => {
-  const keys = backupIncludeCreds.checked
-    ? [...BACKUP_SETTINGS_KEYS, ...BACKUP_CRED_KEYS]
-    : BACKUP_SETTINGS_KEYS;
-  const data = await browser.storage.local.get(keys);
-  const payload = {
-    app: 'intruth-backup',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    includesCredentials: backupIncludeCreds.checked,
-    data,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'intruth-backup-' + new Date().toISOString().slice(0, 10) + '.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  backupHint(backupIncludeCreds.checked ? t('p_backup_done_creds') : t('p_backup_done'), true);
-});
-
-importBackupBtn.addEventListener('click', () => importBackupFile.click());
-
-importBackupFile.addEventListener('change', async () => {
-  const file = importBackupFile.files && importBackupFile.files[0];
-  importBackupFile.value = '';
-  if (!file) return;
-  let payload;
-  try { payload = JSON.parse(await file.text()); }
-  catch { backupHint(t('p_backup_bad_json'), false); return; }
-  if (!payload || payload.app !== 'intruth-backup' || typeof payload.data !== 'object' || payload.data === null) {
-    backupHint(t('p_backup_not_ours'), false);
-    return;
-  }
-  const clean = {};
-  for (const key of [...BACKUP_SETTINGS_KEYS, ...BACKUP_CRED_KEYS]) {
-    if (!(key in payload.data)) continue;
-    const v = payload.data[key];
-    if (BACKUP_ARRAY_KEYS.includes(key)) {
-      if (Array.isArray(v)) clean[key] = v.map(s => String(s).trim()).filter(Boolean);
-    } else if (key === 'feedbackSinceDistill') {
-      if (Number.isInteger(v) && v >= 0) clean[key] = v;
-    } else if (typeof v === 'string') {
-      const s = v.trim();
-      // An empty value in the file must never wipe an existing credential here.
-      if (s || !BACKUP_CRED_KEYS.includes(key)) clean[key] = s;
-    }
-  }
-  if (!Object.keys(clean).length) {
-    backupHint(t('p_backup_empty'), false);
-    return;
-  }
-  await browser.storage.local.set(clean);
-  // Reload so every field shows the restored values (background picks up the changes
-  // via storage.onChanged; the rest is read on the next Start).
-  window.location.reload();
+document.getElementById('openBackupBtn').addEventListener('click', () => {
+  // A small standalone popup window (no tab strip / URL bar) — file pickers work
+  // fine from real windows, unlike from this browser-action panel.
+  browser.windows.create({
+    url: browser.runtime.getURL('src/popup/backup.html'),
+    type: 'popup',
+    width: 520,
+    height: 400,
+  });
+  window.close();
 });
 
 // ── Status ────────────────────────────────────────────────────────────────────
