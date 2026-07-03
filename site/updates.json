@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "intruth@intruth.dev": {
+      "updates": [
+        {
+          "version": "2.3.2",
+          "update_link": "https://PENDING-TANGLED-SITE-URL/intruth-2.3.2-signed.xpi"
+        }
+      ]
+    }
+  }
+}
