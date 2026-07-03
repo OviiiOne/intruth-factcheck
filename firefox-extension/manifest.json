@@ -1,14 +1,17 @@
 {
   "manifest_version": 2,
   "name": "InTruth",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "Press-conference companion: live transcription, translation, neutral key points and on-demand summaries (ES/EN)",
   "homepage_url": "https://github.com/OviiiOne/intruth-factcheck",
 
   "browser_specific_settings": {
     "gecko": {
       "id": "intruth@intruth.dev",
-      "strict_min_version": "109.0"
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["websiteContent"]
+      }
     }
   },
 
@@ -51,7 +54,5 @@
     "16": "assets/icon16.png",
     "48": "assets/icon48.png",
     "128": "assets/icon128.png"
-  },
-
-  "content_security_policy": "script-src 'self' https://cdn.jsdelivr.net; object-src 'self';"
+  }
 }
