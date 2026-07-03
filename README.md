@@ -38,8 +38,8 @@ tab and, in real time:
 
 | | Original (Chrome) | This fork (Firefox) |
 |---|---|---|
-| Browser | Chrome MV3 | Firefox MV2, loads as a temporary add-on |
-| Audio | `tabCapture` | The page's own `<video>/<audio>` element — including players inside cross-origin iframes (e.g. Vimeo embeds) — or a system loopback input device. No installs required. |
+| Browser | Chrome MV3 | Firefox MV2, signed by Mozilla — installs permanently from the [Releases page](https://github.com/OviiiOne/intruth-factcheck/releases) |
+| Audio | `tabCapture` | The page's own `<video>/<audio>` element — including players inside cross-origin iframes (e.g. Vimeo embeds) — or a system loopback input device. No audio drivers or system software needed. |
 | Output | Instant TRUE/FALSE-style verdicts per claim | Neutral key points; verification only on demand |
 | Languages | English | 14 languages + auto-detect; bilingual UI/output (Español \| English); configurable list of languages that skip translation |
 | AI providers | Anthropic key in the browser | Groq (free, default) / Gemini / Claude behind a small proxy (`proxy/`, deployable on Railway) so no API key ever lives in the browser; access gated by a shared token |
@@ -49,14 +49,18 @@ tab and, in real time:
 
 - `firefox-extension/` — the fork's extension (active development)
 - `proxy/` — minimal proxy that keeps all API keys server-side (Railway)
+- `site/` — static download page (served via Tangled sites) with the signed `.xpi`
+  and the `updates.json` Firefox polls for auto-updates
 - `realtime-factcheck/` — the original Chrome extension, kept for reference
 
 ## Installing
 
 **Regular install (recommended):** download the signed `.xpi` from the
+[download page](https://oviiione.tngl.io/intruth-factcheck/) or the
 [Releases page](https://github.com/OviiiOne/intruth-factcheck/releases) and
 open it with Firefox (double-click, or drag it onto a Firefox window). The
-extension installs permanently — no developer mode needed.
+extension installs permanently — no developer mode needed — and versions with
+auto-update support keep themselves current.
 
 **Development (temporary add-on):** open `about:debugging` → *This Firefox* →
 *Load Temporary Add-on…* and pick `firefox-extension/manifest.json`. It unloads
