@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "InTruth",
   "version": "2.3.1",
-  "description": "Real-time fact-checking of political speech and debates",
+  "description": "Press-conference companion: live transcription, translation, neutral key points and on-demand summaries (ES/EN)",
 
   "browser_specific_settings": {
     "gecko": {
