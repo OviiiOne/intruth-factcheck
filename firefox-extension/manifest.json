@@ -3,6 +3,7 @@
   "name": "InTruth",
   "version": "2.3.1",
   "description": "Press-conference companion: live transcription, translation, neutral key points and on-demand summaries (ES/EN)",
+  "homepage_url": "https://github.com/OviiiOne/intruth-factcheck",
 
   "browser_specific_settings": {
     "gecko": {
