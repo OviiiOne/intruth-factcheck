@@ -98,6 +98,12 @@ fact-checked unless an explicit verification ran and is marked as such. Transcri
 text is sent to the transcription/AI providers you configure — bring your own keys,
 nothing is collected by this repo.
 
+## Mirrors
+
+This repository is published on
+[GitHub](https://github.com/OviiiOne/intruth-factcheck) and
+[Tangled](https://tangled.org/oviiione.eurosky.social/intruth-factcheck).
+
 ## License
 
 MIT (same as the original project).
