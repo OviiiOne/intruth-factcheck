@@ -38,7 +38,7 @@ tab and, in real time:
 
 | | Original (Chrome) | This fork (Firefox) |
 |---|---|---|
-| Browser | Chrome MV3 | Firefox MV2, signed by Mozilla — installs permanently from the [Releases page](https://github.com/OviiiOne/intruth-factcheck/releases) |
+| Browser | Chrome MV3 | Firefox MV2, signed by Mozilla — installs permanently |
 | Audio | `tabCapture` | The page's own `<video>/<audio>` element — including players inside cross-origin iframes (e.g. Vimeo embeds) — or a system loopback input device. No audio drivers or system software needed. |
 | Output | Instant TRUE/FALSE-style verdicts per claim | Neutral key points; verification only on demand |
 | Languages | English | 14 languages + auto-detect; bilingual UI/output (Español \| English); configurable list of languages that skip translation |
@@ -55,12 +55,13 @@ tab and, in real time:
 
 ## Installing
 
-**Regular install (recommended):** download the signed `.xpi` from the
-[download page](https://oviiione.tngl.io/intruth-factcheck/) or the
-[Releases page](https://github.com/OviiiOne/intruth-factcheck/releases) and
-open it with Firefox (double-click, or drag it onto a Firefox window). The
-extension installs permanently — no developer mode needed — and versions with
-auto-update support keep themselves current.
+- [![Tangled](docs/tangled-logo.svg) DOWNLOAD PAGE](https://oviiione.tngl.io/intruth-factcheck/)
+- [![GitHub](docs/github-logo.svg) RELEASES](https://github.com/OviiiOne/intruth-factcheck/releases)
+
+**Regular install (recommended):** get the signed `.xpi` from either option
+above and open it with Firefox (from the download page it installs on click).
+The extension installs permanently — no developer mode needed — and versions
+with auto-update support keep themselves current.
 
 **Development (temporary add-on):** open `about:debugging` → *This Firefox* →
 *Load Temporary Add-on…* and pick `firefox-extension/manifest.json`. It unloads
