@@ -41,6 +41,13 @@ body {
   margin-left: auto;
 }
 
+.version {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #777;
+}
+
 .status {
   font-size: 11px;
   font-weight: 500;

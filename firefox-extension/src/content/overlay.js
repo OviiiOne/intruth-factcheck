@@ -347,6 +347,7 @@ function createPanel() {
         '</div>',
       '</div>',
     '</div>',
+    '<div id="rtfc-footer">InTruth v' + escapeHtml(browser.runtime.getManifest().version) + '</div>',
   ].join('');
 
   document.body.appendChild(panel);

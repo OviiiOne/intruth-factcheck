@@ -81,6 +81,10 @@ function switchUiLang(lang) {
 uiLangEsBtn.addEventListener('click', () => switchUiLang('es'));
 uiLangEnBtn.addEventListener('click', () => switchUiLang('en'));
 
+// Show the installed version in the header (from the manifest, so it updates itself).
+const popupVersionEl = document.getElementById('popupVersion');
+if (popupVersionEl) popupVersionEl.textContent = 'v' + browser.runtime.getManifest().version;
+
 // ── Provider toggle ──────────────────────────────────────────────────────────
 
 function switchProvider(prov) {
