@@ -798,8 +798,39 @@ function needsTranslation() {
   return !UNDERSTOOD_LANGS.includes(SOURCE_LANGUAGE);
 }
 
+// Unofficial Google Translate endpoint (no key, no billing). Auto-detects the source
+// (sl=auto) and translates into `targetCode` (our UI language, es/en). It's a REAL
+// translator, so each sentence comes back complete — unlike the Groq model, which
+// sometimes left fragments half-translated. Being unofficial it can rate-limit/block,
+// so translateToUiLanguage falls back to Groq when it fails. Returns the translation
+// plus the language Google detected (used to honour "languages I understand").
+async function translateWithGoogle(text, targetCode) {
+  const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl='
+    + encodeURIComponent(targetCode) + '&dt=t&q=' + encodeURIComponent(text);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('google translate http ' + res.status);
+  const data = await res.json();
+  // Shape: [ [ [translatedChunk, originalChunk, ...], ... ], null, "<detectedLang>", ... ]
+  if (!Array.isArray(data) || !Array.isArray(data[0])) throw new Error('google translate shape');
+  const translated = data[0].map(seg => (Array.isArray(seg) && seg[0]) ? seg[0] : '').join('').trim();
+  const detected = typeof data[2] === 'string' ? data[2] : '';
+  return { translated, detected };
+}
+
 async function translateToUiLanguage(text) {
   if (!text || !text.trim()) return '';
+  const target = getUiLang();
+  // 1) Google first, retried once (covers transient network / rate blips).
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { translated, detected } = await translateWithGoogle(text, target);
+      // Honour "languages I understand": if Google detects the source as one of them,
+      // leave it untranslated (mirrors the Groq prompt's passthrough, needed in 'auto').
+      if (detected && UNDERSTOOD_LANGS.includes(detected)) return '';
+      if (translated) return translated;
+    } catch { /* fall through to the retry, then to Groq */ }
+  }
+  // 2) Fallback: the free Groq model (silent — it's frequent and best-effort).
   try {
     const out = (await callClaude(text, translatePrompt(), false, 768, false, true)).text;
     return (out || '').trim();
