@@ -50,6 +50,11 @@ function defaultUnderstoodLanguages(uiLang) {
   return (uiLang || UI_LANG) === 'es' ? ['es', 'en'] : ['en'];
 }
 
+// Display names for the LLM providers (brand names, same in both languages). Used to
+// show which model is active in the toast, transcript marker and key-point tags.
+const PROVIDER_LABELS = { groq: 'Groq', cerebras: 'Cerebras', mistral: 'Mistral', gemini: 'Gemini', claude: 'Claude' };
+function providerLabel(id) { return PROVIDER_LABELS[id] || (id ? String(id) : ''); }
+
 // ── Prompt fragments (the prompts themselves stay in English) ────────────────
 
 const PROMPT_LANG = {
@@ -124,13 +129,15 @@ const I18N = {
     p_lbl_proxy_url: 'URL del proxy',
     p_lbl_proxy_token: 'Token del proxy',
     p_ph_proxy_token: 'el valor de PROXY_TOKEN',
-    p_lbl_ai_model: 'Modelo de IA',
+    p_lbl_ai_model: 'Modelos de IA (cola)',
+    p_provider_chain_hint: 'Se usan en este orden: si uno falla o se queda sin tokens, pasa al siguiente. Marca los que quieras usar y ordénalos con ▲▼. Groq, Cerebras y Mistral son gratis; Gemini y Claude, de pago.',
     p_proxy_hint: 'Groq: gratis (con límites de velocidad). Gemini/Claude: de pago.',
     p_lbl_gladia: 'API Key de Gladia',
     p_optional: '(opcional)',
     p_ph_gladia: 'tu clave de gladia...',
     p_gladia_hint: 'Gratis 10h/mes en gladia.io. En modo Proxy puedes dejarlo vacío: la clave de Gladia va en el servidor. Sin clave ni proxy usa Whisper local (~150MB, 1ª vez). Para idiomas no europeos (árabe, hebreo, persa…) se recomienda Gladia.',
     p_lbl_source_lang: 'Idioma de la rueda de prensa',
+    p_source_lang_hint: 'El idioma que se HABLA en el vídeo. Ponlo en Automático o en el idioma real; si eliges otro, la transcripción saldrá en ese idioma equivocado.',
     p_opt_auto: 'Detección automática',
     p_lbl_understood: 'Idiomas que entiendes (no traducir)',
     p_understood_hint: 'Los idiomas marcados solo se transcriben; los demás se traducen. (Ctrl+clic para marcar varios.)',
@@ -180,6 +187,13 @@ const I18N = {
     ov_verifying: '⟳ Verificando…',
     ov_verify_disabled_title: 'Verificación no disponible por ahora: la búsqueda web no funciona en el plan gratuito de Groq',
     ov_discard_title: 'No relevante — descartar y aprender',
+    ov_reinforce_title: 'Punto acertado — reforzar y aprender',
+    ov_reinforced_title: 'Reforzado ✓',
+    ov_edit_title: 'Corregir el texto de este punto',
+    ov_save: 'Guardar',
+    ov_cancel: 'Cancelar',
+    ov_model_changed: 'Modelo activo:',
+    ov_via: 'vía',
     ov_no_verdict: 'No se pudo verificar (búsqueda web no disponible). Inténtalo de nuevo.',
     ov_confidence: 'confianza',
     ov_source: 'Fuente',
@@ -233,13 +247,15 @@ const I18N = {
     p_lbl_proxy_url: 'Proxy URL',
     p_lbl_proxy_token: 'Proxy token',
     p_ph_proxy_token: 'the PROXY_TOKEN value',
-    p_lbl_ai_model: 'AI model',
+    p_lbl_ai_model: 'AI models (queue)',
+    p_provider_chain_hint: 'Used in this order: if one fails or runs out of tokens, it falls back to the next. Tick the ones you want and reorder with ▲▼. Groq, Cerebras and Mistral are free; Gemini and Claude are paid.',
     p_proxy_hint: 'Groq: free (rate-limited). Gemini/Claude: paid.',
     p_lbl_gladia: 'Gladia API Key',
     p_optional: '(optional)',
     p_ph_gladia: 'your gladia key...',
     p_gladia_hint: 'Free 10h/month at gladia.io. In Proxy mode you can leave it empty: the Gladia key lives on the server. Without a key or proxy, a local Whisper model is used (~150MB, first time only). For non-European languages (Arabic, Hebrew, Persian…) Gladia is recommended.',
     p_lbl_source_lang: 'Event language',
+    p_source_lang_hint: 'The language SPOKEN in the video. Use Auto-detect or the real language; if you pick another, the transcript will come out in that wrong language.',
     p_opt_auto: 'Auto-detect',
     p_lbl_understood: "Languages you understand (don't translate)",
     p_understood_hint: 'Selected languages are only transcribed; everything else gets translated. (Ctrl+click to select several.)',
@@ -289,6 +305,13 @@ const I18N = {
     ov_verifying: '⟳ Verifying…',
     ov_verify_disabled_title: "Verification unavailable for now: web search doesn't work on Groq's free tier",
     ov_discard_title: 'Not relevant — discard and learn',
+    ov_reinforce_title: 'Good point — reinforce and learn',
+    ov_reinforced_title: 'Reinforced ✓',
+    ov_edit_title: 'Correct this point’s text',
+    ov_save: 'Save',
+    ov_cancel: 'Cancel',
+    ov_model_changed: 'Active model:',
+    ov_via: 'via',
     ov_no_verdict: 'Could not verify (web search unavailable). Try again.',
     ov_confidence: 'confidence',
     ov_source: 'Source',

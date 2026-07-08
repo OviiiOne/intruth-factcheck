@@ -266,6 +266,17 @@
   margin-bottom: 2px;
 }
 
+/* Active-model change marker in the live transcript feed */
+.rtfc-tr-model {
+  font-size: 9px;
+  font-weight: 700;
+  color: #c4b5fd;
+  text-align: center;
+  letter-spacing: 0.03em;
+  margin: 6px 0;
+  opacity: 0.85;
+}
+
 #rtfc-interim {
   font-size: 11px;
   color: #888;
@@ -429,6 +440,13 @@
 
 .rtfc-kp-header .rtfc-timestamp { margin-left: auto; }
 
+/* Which model produced this key point (audit tag) */
+.rtfc-kp-model {
+  font-size: 9px;
+  font-weight: 600;
+  color: #c4b5fd;
+}
+
 .rtfc-kp-point {
   font-size: 12px;
   color: #e8e8e8;
@@ -493,6 +511,58 @@
 }
 .rtfc-verify-btn:hover:not(:disabled) { background: rgba(255,255,255,0.12); color: #fff; }
 .rtfc-verify-btn:disabled { opacity: 0.6; cursor: default; }
+
+/* 👍 reinforce + ✏️ correct — same chip look as 👎, neutral hover */
+.rtfc-reinforce-btn,
+.rtfc-edit-btn {
+  background: rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rtfc-reinforce-btn:hover:not(:disabled) { background: rgba(74,222,128,0.25); }
+.rtfc-edit-btn:hover { background: rgba(255,255,255,0.14); }
+.rtfc-reinforce-btn.rtfc-reinforced { background: rgba(74,222,128,0.3); opacity: 0.8; cursor: default; }
+
+/* ✏️ inline editor for correcting a key point's text */
+.rtfc-kp-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.rtfc-kp-edit-area {
+  flex: 1 1 100%;
+  min-height: 52px;
+  resize: vertical;
+  background: rgba(0,0,0,0.25);
+  color: #f1f5f9;
+  border: 0.5px solid rgba(255,255,255,0.18);
+  border-radius: 6px;
+  font-family: 'Inter', -apple-system, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.rtfc-kp-edit-save,
+.rtfc-kp-edit-cancel {
+  border: 0.5px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rtfc-kp-edit-save { background: #12B5C4; color: #06262b; border-color: transparent; }
+.rtfc-kp-edit-save:hover { background: #0fa2b0; }
+.rtfc-kp-edit-cancel { background: rgba(255,255,255,0.06); color: #cbd5e1; }
+.rtfc-kp-edit-cancel:hover { background: rgba(255,255,255,0.14); }
 
 .rtfc-kp-noverdict { font-size: 10px; color: #888; font-style: italic; }
 

@@ -47,12 +47,9 @@
           <input class="key-input" id="proxyToken" type="password" data-i18n-ph="p_ph_proxy_token" placeholder="" autocomplete="off"/>
         </div>
         <div class="key-field">
-          <label class="key-label" data-i18n="p_lbl_ai_model">Modelo de IA</label>
-          <div class="provider-toggle">
-            <button class="provider-btn" id="provGroq">Groq <span class="free-tag">free</span></button>
-            <button class="provider-btn" id="provGemini">Gemini</button>
-            <button class="provider-btn" id="provClaude">Claude</button>
-          </div>
+          <label class="key-label" data-i18n="p_lbl_ai_model">Modelos de IA (cola)</label>
+          <div class="provider-chain" id="providerChain"></div>
+          <div class="provider-chain-hint" data-i18n="p_provider_chain_hint"></div>
         </div>
         <div class="proxy-hint" data-i18n="p_proxy_hint"></div>
       </div>
@@ -66,6 +63,7 @@
       <div class="key-field">
         <label class="key-label" data-i18n="p_lbl_source_lang">Idioma de la rueda de prensa</label>
         <select class="key-input" id="sourceLanguage"></select>
+        <div class="source-lang-hint" data-i18n="p_source_lang_hint"></div>
       </div>
 
       <div class="key-field">

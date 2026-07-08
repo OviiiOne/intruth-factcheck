@@ -31,6 +31,12 @@ function logTranscript(timecode, text, translation, speaker) {
   transcriptLog.push({ timecode, text, translation: translation || '', speaker: speaker || null });
 }
 
+// A marker in the transcript flow: the active LLM model changed (fallback in the queue).
+// `label` is the already-localized text (e.g. "Modelo activo: Cerebras").
+function logModelChange(timecode, label) {
+  transcriptLog.push({ timecode: timecode || '', modelChange: label || '' });
+}
+
 // Neutral key points extracted live (verdict added later if the user verifies one).
 function logKeyPoint(kp) {
   keyPointsLog.push({
@@ -40,10 +46,17 @@ function logKeyPoint(kp) {
     point: kp.point,
     quote: kp.quote || '',
     speaker: kp.speaker || null,
+    model: kp.model || '',
     verdict: '',
     verdictExplanation: '',
     sources: [],
   });
+}
+
+// The user corrected a key point's text (✏️) — keep the export/summary in sync.
+function updateKeyPointText(id, newText) {
+  const entry = keyPointsLog.find(k => k.id === id);
+  if (entry && newText && newText.trim()) entry.point = newText.trim();
 }
 
 function updateKeyPointVerdict(id, result) {
@@ -182,6 +195,9 @@ function exportPDF() {
         const label = catMeta ? catMeta.label : (cat.charAt(0) + cat.slice(1).toLowerCase());
         const catColor = catMeta ? catMeta.color : '#64748b';
         const spk = kp.speaker ? '<span class="kp-speaker" style="color:' + speakerColor(kp.speaker) + '">' + escapeHtml(kp.speaker) + '</span>' : '';
+        const modelTag = kp.model
+          ? '<span class="kp-model">' + escapeHtml(t('ov_via') + ' ' + providerLabel(kp.model)) + '</span>'
+          : '';
         const quote = kp.quote ? '<div class="kp-quote">“' + escapeHtml(kp.quote) + '”</div>' : '';
         let verdict = '';
         if (kp.verdict) {
@@ -197,7 +213,7 @@ function exportPDF() {
         return '<div class="kp-card">' +
           '<div class="kp-header">' +
             '<span class="kp-cat" style="color:' + catColor + '">' + escapeHtml(label) + '</span>' +
-            spk +
+            spk + modelTag +
             '<span class="timestamp">' + escapeHtml(kp.timecode || '') + '</span>' +
           '</div>' +
           '<div class="kp-point">' + escapeHtml(kp.point) + '</div>' +
@@ -214,9 +230,14 @@ function exportPDF() {
 
   let trLastSpk = null;
   const transcriptHTML = transcriptLog.length
-    ? '<div class="claims-title">' + escapeHtml(t('ex_transcript')) + ' (' + transcriptLog.length + ')</div>' +
+    ? '<div class="claims-title">' + escapeHtml(t('ex_transcript')) + ' (' + transcriptLog.filter(x => !x.modelChange).length + ')</div>' +
       '<div class="transcript">' +
         transcriptLog.map(t => {
+          // Model-change marker (not a spoken line): render inline in the flow.
+          if (t.modelChange) {
+            return '<div class="transcript-model">— ' + escapeHtml(t.modelChange) +
+              (t.timecode ? ' [' + escapeHtml(t.timecode) + ']' : '') + ' —</div>';
+          }
           let spkHTML = '';
           if (t.speaker && t.speaker !== trLastSpk) {
             trLastSpk = t.speaker;
@@ -276,6 +297,7 @@ function exportPDF() {
     '.kp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }' +
     '.kp-cat { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #1d4ed8; }' +
     '.kp-speaker { font-size: 11px; font-weight: 600; color: #444; }' +
+    '.kp-model { font-size: 10px; font-weight: 600; color: #7c3aed; }' +
     '.kp-point { font-size: 13px; color: #222; margin-bottom: 4px; }' +
     '.kp-quote { font-size: 12px; font-style: italic; color: #666; }' +
     '.kp-verdict { font-size: 12px; color: #444; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e5e5e5; }' +
@@ -285,6 +307,7 @@ function exportPDF() {
     '.transcript-tc { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; color: #b45309; }' +
     '.transcript-tr { margin-left: 16px; color: #1d4ed8; font-size: 12px; line-height: 1.5; }' +
     '.transcript-speaker { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }' +
+    '.transcript-model { font-size: 10px; font-weight: 700; color: #7c3aed; text-align: center; margin: 8px 0; letter-spacing: 0.03em; }' +
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +

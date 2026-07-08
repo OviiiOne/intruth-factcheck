@@ -10,9 +10,9 @@ const backupHintEl = document.getElementById('backupHint');
 
 // What a backup may contain. Credentials only go in when the checkbox is ticked,
 // and on import a file is never trusted: only these keys, type-checked, are applied.
-const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages'];
+const BACKUP_SETTINGS_KEYS = ['sourceLanguage', 'participants', 'aiProvider', 'aiProviderChain', 'connectionMode', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages'];
 const BACKUP_CRED_KEYS = ['proxyUrl', 'proxyToken', 'gladiaKey', 'anthropicKey'];
-const BACKUP_ARRAY_KEYS = ['feedbackNegative', 'feedbackPositive', 'feedbackRules', 'understoodLanguages'];
+const BACKUP_ARRAY_KEYS = ['feedbackNegative', 'feedbackPositive', 'feedbackRules', 'understoodLanguages', 'aiProviderChain'];
 
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });

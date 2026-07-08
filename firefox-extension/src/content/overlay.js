@@ -454,6 +454,20 @@ function addTranscriptLine(timecode, text, translation, speaker) {
   if (shouldStick) transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
 }
 
+// Marker line in the live transcript feed noting the active model changed. Sticks to the
+// bottom only if the user is already there (same courtesy as addTranscriptLine).
+function addModelMarker(label) {
+  if (!transcriptFeedEl) return;
+  const distanceFromBottom =
+    transcriptFeedEl.scrollHeight - transcriptFeedEl.scrollTop - transcriptFeedEl.clientHeight;
+  const atBottom = distanceFromBottom < 28;
+  const line = document.createElement('div');
+  line.className = 'rtfc-tr-model';
+  line.textContent = '— ' + label + ' —';
+  transcriptFeedEl.appendChild(line);
+  if (atBottom) transcriptFeedEl.scrollTop = transcriptFeedEl.scrollHeight;
+}
+
 function updateInterim(text) {
   if (!interimEl) return;
   interimEl.textContent = text;
@@ -711,10 +725,15 @@ function buildKeyPointCard(kp) {
     ? '<p class="rtfc-kp-quote">“' + escapeHtml(kp.quote) + '”</p>'
     : '';
 
+  const modelTag = kp.model
+    ? '<span class="rtfc-kp-model">' + escapeHtml(t('ov_via') + ' ' + ((typeof providerLabel === 'function') ? providerLabel(kp.model) : kp.model)) + '</span>'
+    : '';
+
   card.innerHTML = [
     speakerTag,
     '<div class="rtfc-kp-header">',
       '<span class="rtfc-kp-cat" style="background:' + meta.color + '">' + escapeHtml(meta.label) + '</span>',
+      modelTag,
       '<span class="rtfc-timestamp">' + escapeHtml(kp._timestamp || '') + '</span>',
     '</div>',
     '<p class="rtfc-kp-point">' + escapeHtml(kp.point) + '</p>',
@@ -723,6 +742,8 @@ function buildKeyPointCard(kp) {
       // Verification needs live web search, which doesn't work on the Groq free tier
       // (returns 413). Disabled for now; re-enable when a search-capable provider is set.
       '<button class="rtfc-verify-btn" disabled title="' + escapeHtml(t('ov_verify_disabled_title')) + '">' + escapeHtml(t('ov_verify')) + '</button>',
+      '<button class="rtfc-reinforce-btn" title="' + escapeHtml(t('ov_reinforce_title')) + '">👍</button>',
+      '<button class="rtfc-edit-btn" title="' + escapeHtml(t('ov_edit_title')) + '">✏️</button>',
       '<button class="rtfc-discard-btn" title="' + escapeHtml(t('ov_discard_title')) + '">👎</button>',
     '</div>',
   ].join('');
@@ -744,6 +765,60 @@ function buildKeyPointCard(kp) {
     browser.runtime.sendMessage({ type: 'FEEDBACK_NEGATIVE', text: kp.point });
     kpCards.delete(kp._id);
     card.remove();
+  });
+
+  // 👍 Reinforce a good key point: learn to prioritise its like. Keeps the card.
+  const reinforceBtn = card.querySelector('.rtfc-reinforce-btn');
+  if (reinforceBtn) reinforceBtn.addEventListener('click', () => {
+    browser.runtime.sendMessage({ type: 'FEEDBACK_POSITIVE', text: kp.point });
+    reinforceBtn.disabled = true;
+    reinforceBtn.classList.add('rtfc-reinforced');
+    reinforceBtn.title = t('ov_reinforced_title');
+  });
+
+  // ✏️ Correct a mis-summarised point: edit its text inline; the correction updates the
+  // card + the export, and is stored as a positive example so future points improve.
+  const editBtn = card.querySelector('.rtfc-edit-btn');
+  if (editBtn) editBtn.addEventListener('click', () => {
+    const pointEl = card.querySelector('.rtfc-kp-point');
+    const actions = card.querySelector('.rtfc-kp-actions');
+    if (!pointEl || card.querySelector('.rtfc-kp-edit')) return; // already editing
+    const original = kp.point;
+    const editor = document.createElement('div');
+    editor.className = 'rtfc-kp-edit';
+    const ta = document.createElement('textarea');
+    ta.className = 'rtfc-kp-edit-area';
+    ta.value = kp.point;
+    const save = document.createElement('button');
+    save.className = 'rtfc-kp-edit-save';
+    save.textContent = t('ov_save');
+    const cancel = document.createElement('button');
+    cancel.className = 'rtfc-kp-edit-cancel';
+    cancel.textContent = t('ov_cancel');
+    editor.appendChild(ta);
+    editor.appendChild(save);
+    editor.appendChild(cancel);
+    pointEl.style.display = 'none';
+    if (actions) actions.style.display = 'none';
+    pointEl.insertAdjacentElement('afterend', editor);
+    ta.focus();
+
+    const close = () => {
+      editor.remove();
+      pointEl.style.display = '';
+      if (actions) actions.style.display = '';
+    };
+    cancel.addEventListener('click', close);
+    save.addEventListener('click', () => {
+      const newText = ta.value.trim();
+      if (newText && newText !== original) {
+        kp.point = newText;
+        pointEl.textContent = newText;
+        if (typeof updateKeyPointText === 'function') updateKeyPointText(kp._id, newText);
+        browser.runtime.sendMessage({ type: 'FEEDBACK_CORRECTION', original, corrected: newText });
+      }
+      close();
+    });
   });
 
   return card;
@@ -938,6 +1013,38 @@ function findSelectionSpeaker(sel) {
   return null;
 }
 
+// The spoken text of a transcript line only: the direct text node, dropping the
+// [timecode] chip (a <span>) and the "↳ translation" sub-line (a <div>), which are
+// child elements — so context lines don't carry furniture or the translated copy.
+function transcriptLineText(line) {
+  let s = '';
+  line.childNodes.forEach(n => { if (n.nodeType === Node.TEXT_NODE) s += n.textContent; });
+  return s.trim();
+}
+
+// Gather a few transcript lines BEFORE the selection as context. Gladia gives us no
+// speaker labels, so these preceding lines are the model's main signal for who is
+// speaking and what a manually-marked fragment refers to.
+function collectPrecedingContext(sel, maxLines = 6) {
+  try {
+    if (!sel || !sel.rangeCount || !transcriptFeedEl) return '';
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const line = node && node.closest ? node.closest('.rtfc-transcript-line') : null;
+    if (!line) return '';
+    const before = [];
+    let el = line.previousElementSibling;
+    while (el && before.length < maxLines) {
+      if (el.classList && el.classList.contains('rtfc-transcript-line')) {
+        const txt = transcriptLineText(el);
+        if (txt) before.unshift(txt);
+      }
+      el = el.previousElementSibling;
+    }
+    return before.join(' ');
+  } catch { return ''; }
+}
+
 function setupInterestingButton() {
   if (interestingBtn) return;
   interestingBtn = document.createElement('button');
@@ -951,7 +1058,8 @@ function setupInterestingButton() {
     const sel = window.getSelection();
     const text = sel ? cleanTranscriptSelection(sel.toString()) : '';
     const speaker = sel ? findSelectionSpeaker(sel) : null;
-    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text, speaker });
+    const context = sel ? collectPrecedingContext(sel) : '';
+    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text, speaker, context });
     if (sel) sel.removeAllRanges();
     hideInterestingBtn();
   });
@@ -1114,6 +1222,18 @@ browser.runtime.onMessage.addListener((msg) => {
     case 'PIPELINE_INFO':
       showError(msg.message || '', 'info');
       break;
+
+    case 'MODEL_CHANGED': {
+      // A fallback flipped the active model. Tell the user (toast), drop a marker in the
+      // live transcript, and log it so the export shows when/where the model changed.
+      const name = (typeof providerLabel === 'function') ? providerLabel(msg.provider) : msg.provider;
+      const label = t('ov_model_changed') + ' ' + name;
+      showError(label, 'info');
+      const ts = lastTranscriptTimestamp || getClockTimecode();
+      addModelMarker(label);
+      if (typeof logModelChange === 'function') logModelChange(ts, label);
+      break;
+    }
 
     case 'NEW_KEYPOINTS':
       if (msg.results) {

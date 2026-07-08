@@ -6,6 +6,14 @@ let ANTHROPIC_KEY = '';
 let PROXY_URL = '';
 let PROXY_TOKEN = '';
 let AI_PROVIDER = 'claude';
+// Ordered fallback chain of LLM providers (proxy mode). callClaude tries them in order;
+// if one errors or is out of quota, it moves to the next — like the translator's
+// Google→Groq chain. Configured in the popup (storage `aiProviderChain`).
+let AI_PROVIDERS = ['groq'];
+// The provider that served the most recent successful LLM call. When it flips (a fallback
+// kicked in, or quota recovered) we notify the overlay so the user knows which model is
+// live — and tag key points with it for the export (basic audit trail).
+let activeProvider = '';
 let SOURCE_LANGUAGE = 'auto';
 let PARTICIPANTS = '';
 const SERPER_KEY = '';
@@ -26,11 +34,14 @@ const DISTILL_EVERY = 5; // distil after this many new feedback examples
 let UNDERSTOOD_LANGS = defaultUnderstoodLanguages();
 
 async function loadKeys() {
-  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages']);
+  const data = await browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'aiProvider', 'aiProviderChain', 'sourceLanguage', 'participants', 'feedbackNegative', 'feedbackPositive', 'feedbackRules', 'feedbackSinceDistill', 'uiLanguage', 'understoodLanguages']);
   ANTHROPIC_KEY = data.anthropicKey || '';
   PROXY_URL = data.proxyUrl || '';
   PROXY_TOKEN = data.proxyToken || '';
   AI_PROVIDER = data.aiProvider || 'groq';
+  AI_PROVIDERS = (Array.isArray(data.aiProviderChain) && data.aiProviderChain.length)
+    ? data.aiProviderChain
+    : [AI_PROVIDER];
   SOURCE_LANGUAGE = data.sourceLanguage || 'auto';
   PARTICIPANTS = data.participants || '';
   NEG_EXAMPLES = Array.isArray(data.feedbackNegative) ? data.feedbackNegative : [];
@@ -60,6 +71,14 @@ browser.storage.onChanged.addListener(async (changes, area) => {
   }
   if (changes.participants && typeof changes.participants.newValue === 'string') {
     PARTICIPANTS = changes.participants.newValue;
+  }
+  if (changes.aiProviderChain) {
+    AI_PROVIDERS = (Array.isArray(changes.aiProviderChain.newValue) && changes.aiProviderChain.newValue.length)
+      ? changes.aiProviderChain.newValue
+      : [AI_PROVIDER];
+  }
+  if (changes.aiProvider && typeof changes.aiProvider.newValue === 'string') {
+    AI_PROVIDER = changes.aiProvider.newValue;
   }
   if (changes.uiLanguage) {
     setUiLang(changes.uiLanguage.newValue || defaultUiLanguage());
@@ -152,6 +171,8 @@ Return AT MOST ONE key point for this excerpt — the single most newsworthy ite
 
 Do NOT judge whether anything is true — just capture what was said, neutrally.
 
+CRITICAL — NO FABRICATION: Use ONLY the transcript excerpt provided in this request. Do NOT use any prior knowledge about the speaker or the event, and do NOT reproduce anything from the examples or the "already noted" list as if it were said now. The "quote" MUST be copied WORD FOR WORD from THIS excerpt. If a noteworthy statement is not literally present in this excerpt, return {"points": []}. Never invent, complete or recall a statement from memory.
+
 MIND THE TEMPORAL CONTEXT: speakers often QUOTE HISTORY or recall past events (old wars, former possessions, past decisions). NEVER present a historical reference or rhetorical retelling as a current announcement, plan, position or threat. If a noteworthy point is historical, make that explicit in the wording (e.g. "recalls that…"); if you cannot tell whether it is current or historical, SKIP it rather than guess.
 
 Return ONLY a JSON object of the form {"points": [ ... ]} (no markdown, no text outside the JSON). Each element of "points" has:
@@ -215,7 +236,7 @@ Return ONLY a JSON object of the form {"rules": ["...", "..."]} — no markdown,
 
 function manualKeypointPrompt() {
   const L = promptLang();
-  return `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. The summary must cover the WHOLE fragment from its first sentence to its last — do not drop the beginning or keep only the ending; if it spans several ideas, connect them in one sentence. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in ${L.name.toUpperCase()} covering the entire fragment>", "category": "<one of ${L.cats}, or a short ${L.name} label>", "quote": "<the FULL fragment in its original language>", "speaker": null}. No text outside the JSON.`;
+  return `The user manually marked this transcript fragment as important. Turn it into EXACTLY ONE key point. You may be given PRECEDING TRANSCRIPT and a list of participants: use them ONLY to tell who is speaking and to understand what the fragment refers to — summarize ONLY the marked fragment, NEVER the context. The summary must cover the WHOLE fragment from its first sentence to its last — do not drop the beginning or keep only the ending; if it spans several ideas, connect them in one sentence. Return ONLY a JSON object: {"point": "<concise neutral one-sentence summary in ${L.name.toUpperCase()} covering the entire fragment>", "category": "<one of ${L.cats}, or a short ${L.name} label>", "quote": "<the FULL fragment in its original language>", "speaker": "<who said the fragment: follow the Participants rule given in the user message — use the EXACT participant name, or ${L.otherSpeaker} for anyone not listed, or null if truly impossible to tell>"}. No text outside the JSON.`;
 }
 
 // ── Speaker parsing ──────────────────────────────────────────────────────────
@@ -271,58 +292,109 @@ async function searchWeb(query, retries = 2) {
 
 // ── Claude (direct or proxy) ─────────────────────────────────────────────────
 
-async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768, json = false, silent = false) {
-  let res;
+// Record which provider just served a call; announce a flip to the overlay.
+function setActiveProvider(provider) {
+  if (!provider || provider === activeProvider) return;
+  const previous = activeProvider;
+  activeProvider = provider;
+  if (activeTabId) sendToTab(activeTabId, { type: 'MODEL_CHANGED', provider, previous });
+}
 
-  if (PROXY_URL) {
-    const proxyHeaders = { 'Content-Type': 'application/json' };
-    if (PROXY_TOKEN) proxyHeaders['x-proxy-token'] = PROXY_TOKEN;
-    res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: proxyHeaders,
-      body: JSON.stringify({
-        provider: AI_PROVIDER,
-        model: AI_PROVIDER === 'gemini' ? 'gemini-2.0-flash' : 'claude-haiku-4-5-20251001',
-        max_tokens: maxTokens,
-        temperature: 0,
-        grounded,
-        json,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    });
-  } else if (ANTHROPIC_KEY) {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: maxTokens,
-        temperature: 0,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    });
-  } else {
-    if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: 'No API key or proxy configured.' });
-    return { text: '', sources: [] };
-  }
-
-  const data = await res.json();
-  if (data.error) {
-    const msg = data.error.message || 'Unknown API error';
-    console.error('[claude] API error:', msg);
-    if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: msg });
-    return { text: '', sources: [] };
-  }
-  const raw = data.content?.[0]?.text?.trim() || '';
+// Parse a proxy response body into our {text, sources} shape (empty text = failure).
+function parseLLMResponse(data) {
+  const raw = data?.content?.[0]?.text?.trim() || '';
   const text = raw.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-  return { text, sources: Array.isArray(data.sources) ? data.sources : [] };
+  return { text, sources: Array.isArray(data?.sources) ? data.sources : [] };
+}
+
+async function callClaude(userMessage, systemPrompt, grounded = false, maxTokens = 768, json = false, silent = false) {
+  // Direct Anthropic key path (no proxy) stays single-provider.
+  if (!PROXY_URL) {
+    if (!ANTHROPIC_KEY) {
+      if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: 'No API key or proxy configured.' });
+      return { text: '', sources: [] };
+    }
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: maxTokens,
+          temperature: 0,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: data.error.message || 'API error' });
+        return { text: '', sources: [] };
+      }
+      setActiveProvider('claude');
+      return parseLLMResponse(data);
+    } catch (err) {
+      if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: err.message });
+      return { text: '', sources: [] };
+    }
+  }
+
+  // Proxy mode: walk the provider fallback chain. On any error, empty response, or
+  // network failure, move to the next provider (mirrors the translator's chain), so a
+  // quota/rate limit on one model doesn't kill the session mid-event.
+  const proxyHeaders = { 'Content-Type': 'application/json' };
+  if (PROXY_TOKEN) proxyHeaders['x-proxy-token'] = PROXY_TOKEN;
+  const chain = AI_PROVIDERS.length ? AI_PROVIDERS : ['groq'];
+  let lastErr = '';
+
+  for (const provider of chain) {
+    try {
+      const res = await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: proxyHeaders,
+        body: JSON.stringify({
+          provider,
+          // model hints only matter for gemini/claude; the OpenAI-compatible providers
+          // (groq/mistral/cerebras) pick their own model in the proxy.
+          model: provider === 'gemini' ? 'gemini-2.0-flash'
+               : provider === 'claude' ? 'claude-haiku-4-5-20251001' : undefined,
+          max_tokens: maxTokens,
+          temperature: 0,
+          grounded,
+          json,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userMessage }],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        lastErr = data.error?.message || ('HTTP ' + res.status);
+        console.warn(`[claude] provider "${provider}" failed: ${lastErr} — trying next`);
+        continue;
+      }
+      const parsed = parseLLMResponse(data);
+      if (!parsed.text) {
+        lastErr = 'empty response';
+        console.warn(`[claude] provider "${provider}" returned empty — trying next`);
+        continue;
+      }
+      setActiveProvider(provider);
+      return parsed;
+    } catch (err) {
+      lastErr = err.message;
+      console.warn(`[claude] provider "${provider}" threw: ${lastErr} — trying next`);
+    }
+  }
+
+  // Every provider in the chain failed.
+  console.error('[claude] all providers failed:', lastErr);
+  if (!silent && activeTabId) sendToTab(activeTabId, { type: 'PIPELINE_ERROR', message: lastErr || 'All AI models failed' });
+  return { text: '', sources: [] };
 }
 
 function parseArray(str) {
@@ -643,19 +715,46 @@ async function groundAndUpdate(contextText, fastResults, title, lexicalSummary, 
 
 // ── Key points (neutral, no verdict) ──────────────────────────────────────────
 
+// The speaker-attribution legend used by BOTH the automatic key points and the manual
+// ⭐ ones, so they stay in sync: Gladia gives us no speaker labels, so the model infers
+// who is speaking, constrained to the user's Participants (or names parsed from the
+// title). Anyone not listed → "Otro"; only null when truly impossible.
+function buildParticipantContext(title) {
+  const dateContext = pageDate ? `\nDate: ${pageDate}` : '';
+  const participantList = PARTICIPANTS
+    ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean)
+    : parseSpeakersFromTitle(title || '');
+  const otherSpk = promptLang().otherSpeaker;
+  const speakerLegend = participantList.length
+    ? `\nParticipants: ${participantList.join(', ')}. For "speaker": if it is clearly one of these participants, use that EXACT name; if it is someone else (a journalist or moderator asking a question, or anyone not listed), use "${otherSpk}"; use null only if truly impossible to tell. Do NOT force a non-participant onto a participant's name.`
+    : `\nIdentify the speaker from context; use "${otherSpk}" for journalists/moderators; use null if unclear; never output "Speaker N".`;
+  const titleContext = (title || participantList.length)
+    ? `Event: "${title || ''}"${dateContext}${speakerLegend}\n\n`
+    : '';
+  return { participantList, speakerLegend, titleContext };
+}
+
+// Anti-fabrication guard for a fact-check tool: a key point's quote must ACTUALLY be in
+// the transcript window it was extracted from. Catches a model inventing a quote from
+// prior knowledge or echoing an injected example (both would not appear in `context`).
+// Tolerant of light reformatting (punctuation/casing/minor ASR edits) via word overlap.
+function quoteInContext(quote, context) {
+  const q = (quote || '').trim();
+  if (!q) return false; // no quote to verify → can't vouch for it, so don't show it
+  const norm = s => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const nq = norm(q), nc = norm(context);
+  if (!nq || !nc) return false;
+  if (nc.includes(nq)) return true;
+  const qWords = nq.split(' ').filter(w => w.length >= 4);
+  if (!qWords.length) return nc.includes(nq);
+  const cWords = new Set(nc.split(' '));
+  const hits = qWords.filter(w => cWords.has(w)).length;
+  return (hits / qWords.length) >= 0.6;
+}
+
 async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId) {
   try {
-    const dateContext = pageDate ? `\nDate: ${pageDate}` : '';
-    const participantList = PARTICIPANTS
-      ? PARTICIPANTS.split(',').map(s => s.trim()).filter(Boolean)
-      : parseSpeakersFromTitle(title || '');
-    const otherSpk = promptLang().otherSpeaker;
-    const speakerLegend = participantList.length
-      ? `\nParticipants: ${participantList.join(', ')}. For "speaker": if it is clearly one of these participants, use that EXACT name; if it is someone else (a journalist or moderator asking a question, or anyone not listed), use "${otherSpk}"; use null only if truly impossible to tell. Do NOT force a non-participant onto a participant's name.`
-      : `\nIdentify the speaker from context; use "${otherSpk}" for journalists/moderators; use null if unclear; never output "Speaker N".`;
-    const titleContext = (title || participantList.length)
-      ? `Event: "${title || ''}"${dateContext}${speakerLegend}\n\n`
-      : '';
+    const { titleContext } = buildParticipantContext(title);
 
     const notedList = [...recentClaims.values()]
       .filter(v => Array.isArray(v) && v[1])
@@ -684,8 +783,9 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
     const results = (obj && Array.isArray(obj.points)) ? obj.points : parseArray(raw);
     // Hard cap: keep at most the single most newsworthy point per excerpt, even if
     // the model returns several — the prompt asks for ≤1, this guards against drift.
-    // .find (not filter) so only the point we keep is registered as "seen".
-    const candidate = results.find(r => r.point && !isDuplicate(r.point));
+    // quoteInContext BEFORE isDuplicate: reject fabricated/echoed quotes not in this
+    // window, and (via .find) avoid isDuplicate registering a point we discard.
+    const candidate = results.find(r => r.point && quoteInContext(r.quote, contextText) && !isDuplicate(r.point));
     if (!candidate) return;
     const valid = [candidate];
 
@@ -699,6 +799,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
           speaker: dominantSpeaker
             || (r.speaker && !String(r.speaker).match(/^Speaker\s*\d+$/i) ? r.speaker : null),
           dominantSpeakerId,
+          model: activeProvider,
         })),
       });
     }
@@ -710,17 +811,24 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 // Turn a transcript fragment the user marked (⭐) into a key point + learn from it.
 // `speaker` comes from the overlay (nearest speaker header above the selection) and
 // takes precedence over whatever the model guesses.
-async function addManualKeyPoint(text, speaker) {
+async function addManualKeyPoint(text, speaker, context) {
   if (!text || !text.trim()) return;
   addFeedback('pos', text);
   const catOther = promptLang().catOther;
   const spk = (speaker && speaker.trim()) ? speaker.trim() : null;
   try {
-    const raw = (await callClaude(`Fragment: "${text}"`, manualKeypointPrompt(), false, 512, true)).text;
+    const { titleContext } = buildParticipantContext(pageTitle);
+    const contextBlock = (context && context.trim())
+      ? `Preceding transcript (CONTEXT ONLY — do NOT summarize this; use it to tell who is speaking and what the fragment refers to):\n"${context.trim()}"\n\n`
+      : '';
+    const raw = (await callClaude(
+      `${titleContext}${contextBlock}Fragment to turn into a key point: "${text}"`,
+      manualKeypointPrompt(), false, 512, true
+    )).text;
     const kp = parseObject(raw);
     const result = (kp && kp.point)
-      ? { point: kp.point, category: (kp.category || catOther).toUpperCase(), quote: kp.quote || text, speaker: spk || kp.speaker || null, dominantSpeakerId: null }
-      : { point: text, category: catOther, quote: text, speaker: spk, dominantSpeakerId: null };
+      ? { point: kp.point, category: (kp.category || catOther).toUpperCase(), quote: kp.quote || text, speaker: spk || kp.speaker || null, dominantSpeakerId: null, model: activeProvider }
+      : { point: text, category: catOther, quote: text, speaker: spk, dominantSpeakerId: null, model: activeProvider };
     if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [result] });
   } catch (err) {
     console.error('[manual-keypoint] error:', err);
@@ -945,8 +1053,19 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       addFeedback('neg', msg.text);
       return Promise.resolve();
 
+    case 'FEEDBACK_POSITIVE':
+      // 👍 The user reinforced a good key point — learn to prioritise its like.
+      addFeedback('pos', msg.text);
+      return Promise.resolve();
+
+    case 'FEEDBACK_CORRECTION':
+      // ✏️ The user rewrote a key point. The corrected wording is the "right" way to
+      // capture it, so store it as a positive example (the export/card already show it).
+      addFeedback('pos', msg.corrected);
+      return Promise.resolve();
+
     case 'ADD_MANUAL_KEYPOINT':
-      addManualKeyPoint(msg.text, msg.speaker);
+      addManualKeyPoint(msg.text, msg.speaker, msg.context);
       return Promise.resolve();
 
     case 'ADD_PARTICIPANT': {

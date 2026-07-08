@@ -14,9 +14,7 @@ const modeApiKeyBtn = document.getElementById('modeApiKey');
 const modeProxyBtn = document.getElementById('modeProxy');
 const apiKeyFields = document.getElementById('apiKeyFields');
 const proxyFields = document.getElementById('proxyFields');
-const provGroqBtn = document.getElementById('provGroq');
-const provGeminiBtn = document.getElementById('provGemini');
-const provClaudeBtn = document.getElementById('provClaude');
+const providerChainEl = document.getElementById('providerChain');
 const uiLangEsBtn = document.getElementById('uiLangEs');
 const uiLangEnBtn = document.getElementById('uiLangEn');
 
@@ -24,6 +22,19 @@ let isActive = false;
 let mode = 'apikey';
 let aiProvider = 'groq';
 let understoodExplicit = false; // whether the user ever chose understood languages
+
+// Provider fallback chain. All known providers; the enabled ones (in order) form the
+// queue the background walks. Groq/Cerebras/Mistral are free; Gemini/Claude are paid.
+const ALL_PROVIDERS = [
+  { id: 'groq', name: 'Groq', free: true },
+  { id: 'cerebras', name: 'Cerebras', free: true },
+  { id: 'mistral', name: 'Mistral', free: true },
+  { id: 'gemini', name: 'Gemini', free: false },
+  { id: 'claude', name: 'Claude', free: false },
+];
+const DEFAULT_CHAIN = ['groq', 'cerebras', 'mistral'];
+// Full display order with an enabled flag per provider (enabled ones lead, in chain order).
+let providerOrder = [];
 
 // ── UI language (bilingual edition) ──────────────────────────────────────────
 // One setting drives the popup/overlay texts AND the language the AI writes in.
@@ -85,24 +96,102 @@ uiLangEnBtn.addEventListener('click', () => switchUiLang('en'));
 const popupVersionEl = document.getElementById('popupVersion');
 if (popupVersionEl) popupVersionEl.textContent = 'v' + browser.runtime.getManifest().version;
 
-// ── Provider toggle ──────────────────────────────────────────────────────────
+// ── Provider fallback chain (reorderable queue) ───────────────────────────────
 
-function switchProvider(prov) {
-  aiProvider = prov;
-  provGroqBtn.classList.toggle('active', prov === 'groq');
-  provGeminiBtn.classList.toggle('active', prov === 'gemini');
-  provClaudeBtn.classList.toggle('active', prov === 'claude');
-  browser.storage.local.set({ aiProvider: prov });
+// Build providerOrder from a saved chain: enabled providers first (in the saved order),
+// then the remaining providers as disabled.
+function initProviderOrder(savedChain) {
+  const chain = (Array.isArray(savedChain) && savedChain.length) ? savedChain : DEFAULT_CHAIN;
+  const enabled = chain.filter(id => ALL_PROVIDERS.some(p => p.id === id));
+  const rest = ALL_PROVIDERS.map(p => p.id).filter(id => !enabled.includes(id));
+  providerOrder = [
+    ...enabled.map(id => ({ id, enabled: true })),
+    ...rest.map(id => ({ id, enabled: false })),
+  ];
+}
+
+function meta(id) { return ALL_PROVIDERS.find(p => p.id === id) || { id, name: id, free: false }; }
+
+// The queue the background uses = enabled providers, in order.
+function currentChain() {
+  return providerOrder.filter(p => p.enabled).map(p => p.id);
+}
+
+function saveProviderChain() {
+  const chain = currentChain();
+  aiProvider = chain[0] || 'groq'; // keep the legacy single-provider setting in sync
+  browser.storage.local.set({ aiProviderChain: chain, aiProvider });
   updateHint();
 }
 
-provGroqBtn.addEventListener('click', () => switchProvider('groq'));
-provGeminiBtn.addEventListener('click', () => switchProvider('gemini'));
-provClaudeBtn.addEventListener('click', () => switchProvider('claude'));
+function moveProvider(index, delta) {
+  const j = index + delta;
+  if (j < 0 || j >= providerOrder.length) return;
+  const tmp = providerOrder[index];
+  providerOrder[index] = providerOrder[j];
+  providerOrder[j] = tmp;
+  renderProviderChain();
+  saveProviderChain();
+}
+
+function renderProviderChain() {
+  providerChainEl.innerHTML = '';
+  const enabledCount = providerOrder.filter(p => p.enabled).length;
+  providerOrder.forEach((p, i) => {
+    const m = meta(p.id);
+    const row = document.createElement('div');
+    row.className = 'provider-row' + (p.enabled ? ' enabled' : '');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'provider-check';
+    cb.checked = p.enabled;
+    // Don't let the user disable the last enabled provider — the queue can't be empty.
+    cb.disabled = p.enabled && enabledCount === 1;
+    cb.addEventListener('change', () => {
+      p.enabled = cb.checked;
+      // Re-sort so enabled providers always lead, keeping relative order.
+      const on = providerOrder.filter(x => x.enabled);
+      const off = providerOrder.filter(x => !x.enabled);
+      providerOrder = [...on, ...off];
+      renderProviderChain();
+      saveProviderChain();
+    });
+
+    const label = document.createElement('span');
+    label.className = 'provider-name';
+    label.textContent = m.name;
+    if (m.free) {
+      const tag = document.createElement('span');
+      tag.className = 'free-tag';
+      tag.textContent = 'free';
+      label.appendChild(document.createTextNode(' '));
+      label.appendChild(tag);
+    }
+
+    const up = document.createElement('button');
+    up.className = 'provider-move';
+    up.textContent = '▲';
+    up.disabled = i === 0;
+    up.addEventListener('click', () => moveProvider(i, -1));
+
+    const down = document.createElement('button');
+    down.className = 'provider-move';
+    down.textContent = '▼';
+    down.disabled = i === providerOrder.length - 1;
+    down.addEventListener('click', () => moveProvider(i, +1));
+
+    row.appendChild(cb);
+    row.appendChild(label);
+    row.appendChild(up);
+    row.appendChild(down);
+    providerChainEl.appendChild(row);
+  });
+}
 
 // ── Load saved config ─────────────────────────────────────────────────────────
 
-browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider', 'feedbackRules', 'uiLanguage', 'understoodLanguages']).then(data => {
+browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey', 'sourceLanguage', 'participants', 'connectionMode', 'aiProvider', 'aiProviderChain', 'feedbackRules', 'uiLanguage', 'understoodLanguages']).then(data => {
   setUiLang(data.uiLanguage || defaultUiLanguage());
   understoodExplicit = Array.isArray(data.understoodLanguages) && data.understoodLanguages.length > 0;
   const understood = understoodExplicit ? data.understoodLanguages : defaultUnderstoodLanguages(getUiLang());
@@ -115,7 +204,11 @@ browser.storage.local.get(['anthropicKey', 'proxyUrl', 'proxyToken', 'gladiaKey'
   if (data.participants) participantsEl.value = data.participants;
   if (Array.isArray(data.feedbackRules)) feedbackRulesEl.value = data.feedbackRules.join('\n');
   if (data.connectionMode === 'proxy') switchMode('proxy');
-  switchProvider(data.aiProvider || 'groq');
+  // Provider chain: prefer the saved ordered chain; fall back to the legacy single
+  // provider; then to the default free chain.
+  initProviderOrder(data.aiProviderChain || (data.aiProvider ? [data.aiProvider] : null));
+  aiProvider = currentChain()[0] || 'groq';
+  renderProviderChain();
   applyI18n();
   updateHint();
 });
@@ -255,7 +348,7 @@ toggleBtn.addEventListener('click', async () => {
     return;
   }
 
-  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, participants: participantsEl.value.trim(), connectionMode: mode, aiProvider, uiLanguage: getUiLang() });
+  await browser.storage.local.set({ anthropicKey, proxyUrl, proxyToken, gladiaKey, sourceLanguage: sourceLanguageEl.value, participants: participantsEl.value.trim(), connectionMode: mode, aiProvider, aiProviderChain: currentChain(), uiLanguage: getUiLang() });
 
   try {
     const res = await browser.runtime.sendMessage({ type: 'START_FACTCHECK' });
