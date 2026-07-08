@@ -174,12 +174,15 @@ function handleGroq(body) {
   }, body);
 }
 
-// Mistral "La Plateforme" — free "Experiment" tier. mistral-small-latest is capable and
-// supports JSON mode. No web search (grounded falls back to the normal model).
+// Mistral "La Plateforme" free "Experiment" tier. Use the "-latest" alias, NOT a dated id:
+// dated ids (e.g. mistral-medium-2505) get more generous free-tier rate limits but WILL be
+// retired eventually (maintenance burden). medium-latest self-updates and its ~25k TPM /
+// 0.83 rps is enough for our ~2-4 chain calls/min; bursts that exceed it just fall back to
+// Cerebras via the client queue. (Avoid large-latest: its free rate limit is far tighter.)
 function handleMistral(body) {
   return handleOpenAICompat({
     endpoint: 'https://api.mistral.ai/v1/chat/completions',
-    key: MISTRAL_KEY, model: 'mistral-small-latest', label: 'Mistral',
+    key: MISTRAL_KEY, model: 'mistral-medium-latest', label: 'Mistral',
   }, body);
 }
 
