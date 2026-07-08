@@ -87,6 +87,9 @@ On [Railway](https://railway.app) (free tier is enough):
    - `GROQ_API_KEY` — free at [console.groq.com](https://console.groq.com) (default provider)
    - `GLADIA_API_KEY` — free 10h/month at [gladia.io](https://gladia.io) (real-time transcription)
    - `PROXY_TOKEN` — any long random string; the extension popup must send the same one
+   - optional (free fallback models for the provider queue): `CEREBRAS_API_KEY`
+     ([cloud.cerebras.ai](https://cloud.cerebras.ai)) and `MISTRAL_API_KEY`
+     ([console.mistral.ai](https://console.mistral.ai), free "Experiment" tier)
    - optional: `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` if you use those providers
    - do **not** set `ALLOWED_ORIGIN` (it must stay `*` for a browser extension)
 5. Generate a public domain (*Settings → Networking*) and put that URL plus your

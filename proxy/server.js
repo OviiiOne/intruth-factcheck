@@ -4,13 +4,15 @@ const app = express();
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const MISTRAL_KEY = process.env.MISTRAL_API_KEY || '';
+const CEREBRAS_KEY = process.env.CEREBRAS_API_KEY || '';
 const GLADIA_KEY = process.env.GLADIA_API_KEY || '';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
 const PROXY_TOKEN = process.env.PROXY_TOKEN || '';
 const PORT = process.env.PORT || 3000;
 
-if (!ANTHROPIC_KEY && !GEMINI_KEY && !GROQ_KEY) {
-  console.error('At least one of ANTHROPIC_API_KEY, GEMINI_API_KEY or GROQ_API_KEY is required');
+if (!ANTHROPIC_KEY && !GEMINI_KEY && !GROQ_KEY && !MISTRAL_KEY && !CEREBRAS_KEY) {
+  console.error('At least one of ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY or CEREBRAS_API_KEY is required');
   process.exit(1);
 }
 
@@ -110,59 +112,84 @@ async function handleGemini(body) {
   return { status: 200, data: fromGeminiResponse(raw) };
 }
 
-async function handleGroq(body) {
+// Generic handler for OpenAI-compatible chat APIs (Groq, Mistral, Cerebras all speak
+// the same /chat/completions dialect). `label` is only for error messages.
+async function handleOpenAICompat({ endpoint, key, model, groundedModel, label }, body) {
   const { max_tokens, temperature, system, messages, grounded, json } = body;
-  // NOTE: Groq's web search does NOT work on the FREE tier. When a compound model
-  // actually searches, it injects page content into the request and exceeds the
-  // free-tier per-request token limit → 413 request_too_large (confirmed for
-  // compound-beta, groq/compound AND groq/compound-mini). So grounded verification is
-  // currently DISABLED client-side; this path is only reachable on a paid tier.
-  // 'groq/compound' is kept as the correct current id for that case.
-  const model = grounded ? 'groq/compound' : 'llama-3.3-70b-versatile';
+  const useModel = (grounded && groundedModel) ? groundedModel : model;
 
-  const groqMessages = [];
-  if (system) groqMessages.push({ role: 'system', content: system });
+  const msgs = [];
+  if (system) msgs.push({ role: 'system', content: system });
   for (const m of messages) {
-    groqMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+    msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
   }
 
-  const groqBody = {
-    model,
-    messages: groqMessages,
+  const reqBody = {
+    model: useModel,
+    messages: msgs,
     temperature: temperature ?? 0,
     max_tokens: Math.min(max_tokens || 768, 4096),
   };
-  // Force valid JSON for structured calls (key points). Not with compound (search).
-  if (json && !grounded) groqBody.response_format = { type: 'json_object' };
+  // Force valid JSON for structured calls (key points). Never with a search model.
+  if (json && !grounded) reqBody.response_format = { type: 'json_object' };
 
-  const callGroq = (b) => fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const call = (b) => fetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
     body: JSON.stringify(b),
   });
 
-  let response = await callGroq(groqBody);
+  let response = await call(reqBody);
   let raw = await response.json();
   // JSON mode can fail ("Failed to generate JSON"); retry once as plain text — the
   // prompt still asks for JSON and the client parses leniently.
-  if (!response.ok && groqBody.response_format) {
-    delete groqBody.response_format;
-    response = await callGroq(groqBody);
+  if (!response.ok && reqBody.response_format) {
+    delete reqBody.response_format;
+    response = await call(reqBody);
     raw = await response.json();
   }
   if (!response.ok) {
-    return { status: response.status, data: { error: { message: raw.error?.message || 'Groq API error' } } };
+    return { status: response.status, data: { error: { message: raw.error?.message || raw.message || (label + ' API error') } } };
   }
 
   const msg = raw.choices?.[0]?.message || {};
   const text = msg.content || '';
-  // compound models report what they searched; pull source URLs when present.
+  // Groq compound models report what they searched; pull source URLs when present.
   const sources = [];
   for (const t of (msg.executed_tools || [])) {
     const results = t?.search_results?.results || t?.results || [];
     for (const r of results) { if (r && r.url) sources.push(r.url); }
   }
-  return { status: 200, data: { content: [{ type: 'text', text }], model, stop_reason: 'end_turn', sources } };
+  return { status: 200, data: { content: [{ type: 'text', text }], model: useModel, stop_reason: 'end_turn', sources } };
+}
+
+// NOTE: Groq's web search does NOT work on the FREE tier. When a compound model
+// actually searches, it injects page content into the request and exceeds the
+// free-tier per-request token limit → 413 request_too_large. So grounded verification
+// is currently DISABLED client-side; groundedModel is only reachable on a paid tier.
+function handleGroq(body) {
+  return handleOpenAICompat({
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    key: GROQ_KEY, model: 'llama-3.3-70b-versatile', groundedModel: 'groq/compound', label: 'Groq',
+  }, body);
+}
+
+// Mistral "La Plateforme" — free "Experiment" tier. mistral-small-latest is capable and
+// supports JSON mode. No web search (grounded falls back to the normal model).
+function handleMistral(body) {
+  return handleOpenAICompat({
+    endpoint: 'https://api.mistral.ai/v1/chat/completions',
+    key: MISTRAL_KEY, model: 'mistral-small-latest', label: 'Mistral',
+  }, body);
+}
+
+// Cerebras inference — free tier with very high token limits (good fallback when Groq's
+// per-day quota is exhausted mid-event). Serves Llama 3.3 70B at high speed.
+function handleCerebras(body) {
+  return handleOpenAICompat({
+    endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+    key: CEREBRAS_KEY, model: 'llama-3.3-70b', label: 'Cerebras',
+  }, body);
 }
 
 app.post('/', async (req, res) => {
@@ -176,10 +203,18 @@ app.post('/', async (req, res) => {
     let result;
     if (provider === 'groq' && GROQ_KEY) {
       result = await handleGroq(req.body);
+    } else if (provider === 'mistral' && MISTRAL_KEY) {
+      result = await handleMistral(req.body);
+    } else if (provider === 'cerebras' && CEREBRAS_KEY) {
+      result = await handleCerebras(req.body);
     } else if (provider === 'gemini' && GEMINI_KEY) {
       result = await handleGemini(req.body);
     } else if (provider === 'claude' && ANTHROPIC_KEY) {
       result = await handleClaude(req.body);
+    } else if (provider) {
+      // A specific provider was asked for but its key isn't configured here. Return a
+      // clear error so the client's fallback chain can move to the next provider.
+      result = { status: 400, data: { error: { message: `Provider "${provider}" not available on this proxy (missing API key)` } } };
     } else if (GROQ_KEY) {
       result = await handleGroq(req.body);
     } else if (GEMINI_KEY) {
@@ -222,6 +257,8 @@ app.post('/gladia/live', async (req, res) => {
 app.get('/health', (req, res) => {
   const providers = [];
   if (GROQ_KEY) providers.push('groq');
+  if (CEREBRAS_KEY) providers.push('cerebras');
+  if (MISTRAL_KEY) providers.push('mistral');
   if (ANTHROPIC_KEY) providers.push('claude');
   if (GEMINI_KEY) providers.push('gemini');
   res.json({ status: 'ok', providers, gladia: !!GLADIA_KEY });
