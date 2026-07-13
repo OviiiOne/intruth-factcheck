@@ -827,7 +827,9 @@ function buildKeyPointCard(kp) {
 function addKeyPoint(kp) {
   if (!verdictListEl) return;
   verdictListEl.querySelector('.rtfc-empty')?.remove();
-  if (!kp._timestamp) kp._timestamp = getClaimTimestamp(kp.quote || kp.point);
+  // Prefer the timecode resolved at extraction time (background matched the quote to
+  // its transcript sentence); the word-overlap reverse guess is only a fallback now.
+  if (!kp._timestamp) kp._timestamp = kp.timecode || getClaimTimestamp(kp.quote || kp.point);
   kp._id = ++kpCounter;
   const card = buildKeyPointCard(kp);
   verdictListEl.prepend(card);
@@ -1022,6 +1024,19 @@ function transcriptLineText(line) {
   return s.trim();
 }
 
+// The timecode of the transcript line where the selection STARTS — that is when the
+// selected statement was said (the ⭐ click can happen much later).
+function findSelectionTimecode(sel) {
+  try {
+    if (!sel || !sel.rangeCount || !transcriptFeedEl) return '';
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const line = node && node.closest ? node.closest('.rtfc-transcript-line') : null;
+    const tc = line ? line.querySelector('.rtfc-tc') : null;
+    return tc ? tc.textContent.replace(/[\[\]]/g, '').trim() : '';
+  } catch { return ''; }
+}
+
 // Gather a few transcript lines BEFORE the selection as context. Gladia gives us no
 // speaker labels, so these preceding lines are the model's main signal for who is
 // speaking and what a manually-marked fragment refers to.
@@ -1059,7 +1074,8 @@ function setupInterestingButton() {
     const text = sel ? cleanTranscriptSelection(sel.toString()) : '';
     const speaker = sel ? findSelectionSpeaker(sel) : null;
     const context = sel ? collectPrecedingContext(sel) : '';
-    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text, speaker, context });
+    const timecode = sel ? findSelectionTimecode(sel) : '';
+    if (text) browser.runtime.sendMessage({ type: 'ADD_MANUAL_KEYPOINT', text, speaker, context, timecode });
     if (sel) sel.removeAllRanges();
     hideInterestingBtn();
   });

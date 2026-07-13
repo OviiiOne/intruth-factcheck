@@ -533,7 +533,7 @@ function resetLexical() {
   return { rates: { hedging: 0, certainty: 0, filler: 0, emotional: 0, exclusive: 0, firstPersonSg: 0 }, wordsPerSecond: null, wordCount: 0 };
 }
 
-async function onNewSentence(text, speakerId) {
+async function onNewSentence(text, speakerId, timecode) {
   if (lastSpeakerId !== null &&
       speakerId !== null && speakerId !== undefined &&
       speakerId !== lastSpeakerId &&
@@ -553,7 +553,7 @@ async function onNewSentence(text, speakerId) {
     const flushLexSummary = buildLexicalSummary(flushLexSnapshot);
     windowLexical = resetLexical();
     windowStartTime = null;
-    await extractKeyPoints(flushText, pageTitle, flushLexSummary, flushLexSnapshot, flushDominantSpeaker, flushDominantId);
+    await extractKeyPoints(flushText, pageTitle, flushLexSummary, flushLexSnapshot, flushDominantSpeaker, flushDominantId, sentenceWindow.slice());
   }
   lastSpeakerId = speakerId;
 
@@ -561,7 +561,7 @@ async function onNewSentence(text, speakerId) {
   const label = confirmedName ? `[${confirmedName}]` : (speakerId !== null && speakerId !== undefined ? `[Speaker ${speakerId}]` : null);
   const labeledText = label ? `${label} ${text}` : text;
 
-  sentenceWindow.push({ text: labeledText, speakerId, speakerName: confirmedName });
+  sentenceWindow.push({ text: labeledText, speakerId, speakerName: confirmedName, timecode: timecode || getClockTimecode() });
   if (sentenceWindow.length > WINDOW_KEEP) sentenceWindow.shift();
   sentenceCount++;
 
@@ -602,7 +602,7 @@ async function onNewSentence(text, speakerId) {
     windowStartTime = null;
 
     try {
-      await extractKeyPoints(contextText, pageTitle, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId);
+      await extractKeyPoints(contextText, pageTitle, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId, sentenceWindow.slice());
     } catch (e) {
       console.error('[window] evaluation error:', e);
     }
@@ -752,7 +752,35 @@ function quoteInContext(quote, context) {
   return (hits / qWords.length) >= 0.6;
 }
 
-async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId) {
+// WHEN was the quote said (not when we extracted it): the timecode of the window
+// sentence that contains it. Exact containment first (a multi-sentence quote gets the
+// sentence where it starts); then the sentence best covered by the quote's words.
+// Fallback = start of the newest extraction window — never "now": extraction runs
+// several sentences after the statement, so the clock time is always misleading.
+function findQuoteTimecode(quote, sentences) {
+  const list = (sentences || []).filter(s => s && s.timecode);
+  if (!list.length) return '';
+  const norm = s => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  const nq = norm(quote || '');
+  if (nq) {
+    for (const s of list) { if (norm(s.text).includes(nq)) return s.timecode; }
+    const qWords = new Set(nq.split(' ').filter(w => w.length >= 4));
+    if (qWords.size) {
+      let best = null, bestScore = 0;
+      for (const s of list) {
+        const sWords = norm(s.text).split(' ').filter(w => w.length >= 4);
+        if (!sWords.length) continue;
+        const hits = sWords.filter(w => qWords.has(w)).length;
+        const score = hits / sWords.length;
+        if (score > bestScore) { bestScore = score; best = s; }
+      }
+      if (best && bestScore >= 0.5) return best.timecode;
+    }
+  }
+  return list[Math.max(0, list.length - WINDOW_SIZE)].timecode;
+}
+
+async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnapshot, dominantSpeaker, dominantSpeakerId, windowSentences) {
   try {
     const { titleContext } = buildParticipantContext(title);
 
@@ -800,6 +828,7 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
             || (r.speaker && !String(r.speaker).match(/^Speaker\s*\d+$/i) ? r.speaker : null),
           dominantSpeakerId,
           model: activeProvider,
+          timecode: findQuoteTimecode(r.quote || r.point, windowSentences),
         })),
       });
     }
@@ -811,11 +840,12 @@ async function extractKeyPoints(contextText, title, lexicalSummary, lexicalSnaps
 // Turn a transcript fragment the user marked (⭐) into a key point + learn from it.
 // `speaker` comes from the overlay (nearest speaker header above the selection) and
 // takes precedence over whatever the model guesses.
-async function addManualKeyPoint(text, speaker, context) {
+async function addManualKeyPoint(text, speaker, context, timecode) {
   if (!text || !text.trim()) return;
   addFeedback('pos', text);
   const catOther = promptLang().catOther;
   const spk = (speaker && speaker.trim()) ? speaker.trim() : null;
+  const tc = (timecode && timecode.trim()) ? timecode.trim() : '';
   try {
     const { titleContext } = buildParticipantContext(pageTitle);
     const contextBlock = (context && context.trim())
@@ -827,12 +857,12 @@ async function addManualKeyPoint(text, speaker, context) {
     )).text;
     const kp = parseObject(raw);
     const result = (kp && kp.point)
-      ? { point: kp.point, category: (kp.category || catOther).toUpperCase(), quote: kp.quote || text, speaker: spk || kp.speaker || null, dominantSpeakerId: null, model: activeProvider }
-      : { point: text, category: catOther, quote: text, speaker: spk, dominantSpeakerId: null, model: activeProvider };
+      ? { point: kp.point, category: (kp.category || catOther).toUpperCase(), quote: kp.quote || text, speaker: spk || kp.speaker || null, dominantSpeakerId: null, model: activeProvider, timecode: tc }
+      : { point: text, category: catOther, quote: text, speaker: spk, dominantSpeakerId: null, model: activeProvider, timecode: tc };
     if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [result] });
   } catch (err) {
     console.error('[manual-keypoint] error:', err);
-    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [{ point: text, category: catOther, quote: text, speaker: spk }] });
+    if (activeTabId) sendToTab(activeTabId, { type: 'NEW_KEYPOINTS', results: [{ point: text, category: catOther, quote: text, speaker: spk, timecode: tc }] });
   }
 }
 
@@ -955,9 +985,9 @@ function getClockTimecode() {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
-async function relayTranscript(msg) {
+async function relayTranscript(msg, timecode) {
   if (!activeTabId) return;
-  const timecode = msg.isFinal ? getClockTimecode() : '';
+  timecode = msg.isFinal ? (timecode || getClockTimecode()) : '';
   let translation = '';
   if (msg.isFinal && needsTranslation()) {
     translation = await translateToUiLanguage(msg.text);
@@ -1003,7 +1033,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
             });
           }
         }
-        onNewSentence(msg.text, currentSpeakerId);
+        const tc = getClockTimecode();
+        onNewSentence(msg.text, currentSpeakerId, tc);
+        relayTranscript(msg, tc);
+        return Promise.resolve();
       }
       relayTranscript(msg);
       return Promise.resolve();
@@ -1065,7 +1098,7 @@ browser.runtime.onMessage.addListener((msg, sender) => {
       return Promise.resolve();
 
     case 'ADD_MANUAL_KEYPOINT':
-      addManualKeyPoint(msg.text, msg.speaker, msg.context);
+      addManualKeyPoint(msg.text, msg.speaker, msg.context, msg.timecode);
       return Promise.resolve();
 
     case 'ADD_PARTICIPANT': {
