@@ -9,6 +9,10 @@
         {
           "version": "2.3.3",
           "update_link": "https://oviiione.tngl.io/newspal/intruth-2.3.3-signed.xpi"
+        },
+        {
+          "version": "2.3.4",
+          "update_link": "https://oviiione.tngl.io/newspal/newspal-2.3.4-signed.xpi"
         }
       ]
     }
