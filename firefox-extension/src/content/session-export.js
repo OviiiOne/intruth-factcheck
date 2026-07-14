@@ -111,7 +111,7 @@ function exportPDF() {
     return;
   }
 
-  const pageTitle = document.title || 'InTruth';
+  const pageTitle = document.title || 'NewsPal';
   const exportDate = new Date().toLocaleString();
 
   const verdictColor = (v, c) => {
@@ -261,7 +261,7 @@ function exportPDF() {
   const unverifiableCount = sessionLog.filter(e => e.verdict === 'UNVERIFIABLE').length;
 
   const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/>' +
-    '<title>InTruth — ' + escapeHtml(pageTitle) + '</title><style>' +
+    '<title>NewsPal — ' + escapeHtml(pageTitle) + '</title><style>' +
     '* { box-sizing: border-box; margin: 0; padding: 0; }' +
     'body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-size: 13px; color: #111; padding: 40px; max-width: 800px; margin: 0 auto; line-height: 1.5; }' +
     '.report-header { border-bottom: 2px solid #111; padding-bottom: 16px; margin-bottom: 24px; }' +
@@ -311,7 +311,7 @@ function exportPDF() {
     '@media print { body { padding: 20px; } .claim-card { page-break-inside: avoid; } }' +
     '</style></head><body>' +
     '<div class="report-header">' +
-      '<div class="report-title">InTruth — ' + escapeHtml(t('ex_report')) + '</div>' +
+      '<div class="report-title">NewsPal — ' + escapeHtml(t('ex_report')) + '</div>' +
       '<div class="report-meta">' +
         '<span>📺 ' + escapeHtml(pageTitle) + '</span>' +
         '<span>🕐 ' + escapeHtml(exportDate) + '</span>' +
@@ -339,9 +339,9 @@ function exportPDF() {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  const safeTitle = (pageTitle || 'intruth')
+  const safeTitle = (pageTitle || 'newspal')
     .replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ-]/g, '')
-    .trim().replace(/\s+/g, '-').slice(0, 60) || 'intruth';
+    .trim().replace(/\s+/g, '-').slice(0, 60) || 'newspal';
   a.download = safeTitle + '-' + new Date().toISOString().slice(0, 10) + '.html';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);

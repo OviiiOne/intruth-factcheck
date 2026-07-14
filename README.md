@@ -1,4 +1,4 @@
-# InTruth — press-conference companion (Firefox fork)
+# NewsPal — press-conference companion (Firefox fork)
 
 > **This is a fork.** The original project is
 > [rpanigrahi222/intruth-factcheck](https://github.com/rpanigrahi222/intruth-factcheck),
@@ -9,7 +9,7 @@
 
 ## What this fork does
 
-![The InTruth overlay following a live speech: timecoded transcript at the top, extracted key points below — each with speaker, category, quote, verify button and 👎 feedback](docs/overlay-example.jpg)
+![The NewsPal overlay following a live speech: timecoded transcript at the top, extracted key points below — each with speaker, category, quote, verify button and 👎 feedback](docs/overlay-example.jpg)
 
 Follow a live press conference (or speech, debate, interview) playing in a browser
 tab and, in real time:
@@ -55,8 +55,8 @@ tab and, in real time:
 
 ## Installing
 
-- [![Tangled](docs/tangled-logo.svg) DOWNLOAD PAGE](https://oviiione.tngl.io/intruth-factcheck/)
-- [![GitHub](docs/github-logo.svg) RELEASES](https://github.com/OviiiOne/intruth-factcheck/releases)
+- [![Tangled](docs/tangled-logo.svg) DOWNLOAD PAGE](https://oviiione.tngl.io/newspal/)
+- [![GitHub](docs/github-logo.svg) RELEASES](https://github.com/OviiiOne/newspal/releases)
 
 **Regular install (recommended):** get the signed `.xpi` from either option
 above and open it with Firefox (from the download page it installs on click).
@@ -109,8 +109,8 @@ nothing is collected by this repo.
 ## Mirrors
 
 This repository is published on
-[GitHub](https://github.com/OviiiOne/intruth-factcheck) and
-[Tangled](https://tangled.org/oviiione.eurosky.social/intruth-factcheck).
+[GitHub](https://github.com/OviiiOne/newspal) and
+[Tangled](https://tangled.org/oviiione.eurosky.social/newspal).
 
 ## License
 

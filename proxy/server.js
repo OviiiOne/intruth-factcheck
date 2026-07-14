@@ -268,5 +268,5 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`InTruth proxy running on port ${PORT}`);
+  console.log(`NewsPal proxy running on port ${PORT}`);
 });

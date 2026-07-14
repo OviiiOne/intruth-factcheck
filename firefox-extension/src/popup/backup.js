@@ -16,7 +16,7 @@ const BACKUP_ARRAY_KEYS = ['feedbackNegative', 'feedbackPositive', 'feedbackRule
 
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
-  document.title = 'InTruth — ' + t('p_lbl_backup');
+  document.title = 'NewsPal — ' + t('p_lbl_backup');
 }
 
 browser.storage.local.get('uiLanguage').then(d => {
@@ -35,7 +35,7 @@ exportBackupBtn.addEventListener('click', async () => {
     : BACKUP_SETTINGS_KEYS;
   const data = await browser.storage.local.get(keys);
   const payload = {
-    app: 'intruth-backup',
+    app: 'intruth-backup', // internal marker unchanged (NewsPal rename) so old backups keep importing
     version: 1,
     exportedAt: new Date().toISOString(),
     includesCredentials: backupIncludeCreds.checked,
@@ -45,7 +45,7 @@ exportBackupBtn.addEventListener('click', async () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'intruth-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.download = 'newspal-backup-' + new Date().toISOString().slice(0, 10) + '.json';
   document.body.appendChild(a);
   a.click();
   a.remove();

@@ -4,11 +4,11 @@
       "updates": [
         {
           "version": "2.3.2",
-          "update_link": "https://oviiione.tngl.io/intruth-factcheck/intruth-2.3.2-signed.xpi"
+          "update_link": "https://oviiione.tngl.io/newspal/intruth-2.3.2-signed.xpi"
         },
         {
           "version": "2.3.3",
-          "update_link": "https://oviiione.tngl.io/intruth-factcheck/intruth-2.3.3-signed.xpi"
+          "update_link": "https://oviiione.tngl.io/newspal/intruth-2.3.3-signed.xpi"
         }
       ]
     }

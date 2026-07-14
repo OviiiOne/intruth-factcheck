@@ -319,7 +319,7 @@ function createPanel() {
   panel.id = 'rtfc-panel';
   panel.innerHTML = [
     '<div id="rtfc-header">',
-      '<span><span class="rtfc-dot"></span>InTruth</span>',
+      '<span><span class="rtfc-dot"></span>NewsPal</span>',
       '<div class="rtfc-header-actions">',
         '<button id="rtfc-summary-btn" title="' + escapeHtml(t('ov_summary_btn_title')) + '">' + escapeHtml(t('ov_summary_btn')) + '</button>',
         '<button id="rtfc-export" title="' + escapeHtml(t('ov_export_title')) + '">' + escapeHtml(t('ov_export_btn')) + '</button>',
@@ -347,7 +347,7 @@ function createPanel() {
         '</div>',
       '</div>',
     '</div>',
-    '<div id="rtfc-footer">InTruth v' + escapeHtml(browser.runtime.getManifest().version) + '</div>',
+    '<div id="rtfc-footer">NewsPal v' + escapeHtml(browser.runtime.getManifest().version) + '</div>',
   ].join('');
 
   document.body.appendChild(panel);

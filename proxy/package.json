@@ -1,7 +1,7 @@
 {
-  "name": "intruth-proxy",
+  "name": "newspal-proxy",
   "version": "1.0.0",
-  "description": "Proxy for InTruth extension — forwards requests to Claude API",
+  "description": "Proxy for NewsPal extension — forwards requests to the LLM providers",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

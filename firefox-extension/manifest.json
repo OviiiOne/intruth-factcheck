@@ -1,15 +1,15 @@
 {
   "manifest_version": 2,
-  "name": "InTruth",
+  "name": "NewsPal",
   "version": "2.3.4",
   "description": "Press-conference companion: live transcription, translation, neutral key points and on-demand summaries (ES/EN)",
-  "homepage_url": "https://github.com/OviiiOne/intruth-factcheck",
+  "homepage_url": "https://github.com/OviiiOne/newspal",
 
   "browser_specific_settings": {
     "gecko": {
       "id": "intruth@intruth.dev",
       "strict_min_version": "109.0",
-      "update_url": "https://oviiione.tngl.io/intruth-factcheck/updates.json",
+      "update_url": "https://oviiione.tngl.io/newspal/updates.json",
       "data_collection_permissions": {
         "required": ["websiteContent"]
       }
